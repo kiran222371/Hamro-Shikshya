@@ -1794,3 +1794,52 @@ input[type="file"].auth-input {
     font-size: 28px;
   }
 }
+
+
+.student-hero-left,
+.student-hero-content,
+.student-hero-text,
+.student-welcome-card {
+  position: relative;
+  z-index: 5;
+}
+
+.student-hero-left h1,
+.student-hero-left h2,
+.student-hero-left h3,
+.student-hero-left p,
+.student-hero-content h1,
+.student-hero-content h2,
+.student-hero-content h3,
+.student-hero-content p,
+.student-hero-title,
+.student-hero-name,
+.student-welcome-title,
+.student-welcome-text {
+  color: #0f172a !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  text-shadow: none !important;
+  mix-blend-mode: normal !important;
+}
+
+.student-hero-left b,
+.student-hero-left strong,
+.student-hero-content b,
+.student-hero-content strong {
+  color: #2563eb !important;
+  font-weight: 900 !important;
+}
+
+.student-hero-left::before,
+.student-hero-left::after,
+.student-hero-content::before,
+.student-hero-content::after {
+  z-index: 0 !important;
+}
+
+.student-hero-left > *,
+.student-hero-content > * {
+  position: relative;
+  z-index: 10;
+}
