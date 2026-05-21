@@ -306,6 +306,342 @@ const mergeUniqueItems = (backendItems, localItems) => {
   return merged;
 };
 
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background:
+      "linear-gradient(135deg, #e0f2fe 0%, #f8fafc 45%, #e0e7ff 100%)",
+    padding: "24px",
+    color: "#0f172a",
+  },
+  shell: {
+    maxWidth: "1440px",
+    margin: "0 auto",
+  },
+  hero: {
+    background:
+      "linear-gradient(135deg, rgba(37,99,235,0.98), rgba(79,70,229,0.96), rgba(14,165,233,0.9))",
+    borderRadius: "30px",
+    padding: "28px",
+    color: "#ffffff",
+    boxShadow: "0 24px 70px rgba(37,99,235,0.24)",
+    marginBottom: "22px",
+    position: "relative",
+    overflow: "hidden",
+  },
+  heroGrid: {
+    display: "grid",
+    gridTemplateColumns: "1.4fr 0.8fr",
+    gap: "22px",
+    alignItems: "stretch",
+  },
+  heroTitle: {
+    fontSize: "clamp(34px, 5vw, 62px)",
+    lineHeight: "1",
+    margin: "0 0 14px",
+    fontWeight: 900,
+    letterSpacing: "-1.5px",
+  },
+  heroSubtitle: {
+    margin: "0 0 22px",
+    color: "rgba(255,255,255,0.86)",
+    fontSize: "17px",
+    maxWidth: "680px",
+  },
+  profilePanel: {
+    background: "rgba(255,255,255,0.16)",
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: "24px",
+    padding: "20px",
+    backdropFilter: "blur(16px)",
+  },
+  avatar: {
+    width: "86px",
+    height: "86px",
+    borderRadius: "26px",
+    background:
+      "linear-gradient(135deg, rgba(255,255,255,0.95), rgba(226,232,240,0.88))",
+    color: "#1d4ed8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "34px",
+    fontWeight: 900,
+    boxShadow: "0 18px 40px rgba(15,23,42,0.18)",
+  },
+  badge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "7px",
+    borderRadius: "999px",
+    padding: "8px 13px",
+    background: "rgba(255,255,255,0.18)",
+    border: "1px solid rgba(255,255,255,0.24)",
+    color: "#ffffff",
+    fontWeight: 700,
+    fontSize: "13px",
+  },
+  heroActions: {
+    display: "flex",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginTop: "20px",
+  },
+  whiteButton: {
+    border: "0",
+    borderRadius: "16px",
+    padding: "13px 18px",
+    background: "#ffffff",
+    color: "#1d4ed8",
+    fontWeight: 900,
+    cursor: "pointer",
+    boxShadow: "0 14px 30px rgba(15,23,42,0.18)",
+  },
+  ghostButton: {
+    border: "1px solid rgba(255,255,255,0.35)",
+    borderRadius: "16px",
+    padding: "13px 18px",
+    background: "rgba(255,255,255,0.12)",
+    color: "#ffffff",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  logoutButton: {
+    border: "0",
+    borderRadius: "16px",
+    padding: "13px 18px",
+    background: "#fb7185",
+    color: "#ffffff",
+    fontWeight: 900,
+    cursor: "pointer",
+    boxShadow: "0 14px 30px rgba(244,63,94,0.26)",
+  },
+  card: {
+    background: "rgba(255,255,255,0.9)",
+    border: "1px solid rgba(226,232,240,0.9)",
+    borderRadius: "26px",
+    padding: "24px",
+    boxShadow: "0 18px 50px rgba(15,23,42,0.08)",
+    marginBottom: "22px",
+  },
+  cardHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "16px",
+    marginBottom: "18px",
+  },
+  title: {
+    margin: 0,
+    fontSize: "26px",
+    fontWeight: 900,
+    color: "#0f172a",
+    letterSpacing: "-0.5px",
+  },
+  muted: {
+    color: "#64748b",
+    margin: "6px 0 0",
+    fontSize: "15px",
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: "16px",
+  },
+  statCard: {
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.95))",
+    border: "1px solid #e2e8f0",
+    borderRadius: "24px",
+    padding: "20px",
+    boxShadow: "0 12px 30px rgba(15,23,42,0.06)",
+  },
+  statIcon: {
+    width: "46px",
+    height: "46px",
+    borderRadius: "16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#eff6ff",
+    fontSize: "22px",
+    marginBottom: "16px",
+  },
+  statNumber: {
+    margin: 0,
+    fontSize: "32px",
+    fontWeight: 900,
+    color: "#0f172a",
+  },
+  statLabel: {
+    margin: "4px 0 0",
+    color: "#64748b",
+    fontWeight: 700,
+  },
+  quickNav: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))",
+    gap: "12px",
+  },
+  navButton: {
+    border: "1px solid #e2e8f0",
+    background: "#ffffff",
+    borderRadius: "18px",
+    padding: "14px 16px",
+    cursor: "pointer",
+    fontWeight: 900,
+    color: "#0f172a",
+    textAlign: "left",
+    boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
+  },
+  formGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+    gap: "14px",
+  },
+  input: {
+    width: "100%",
+    border: "1px solid #cbd5e1",
+    borderRadius: "16px",
+    padding: "14px 16px",
+    fontSize: "15px",
+    outline: "none",
+    background: "#ffffff",
+    color: "#0f172a",
+  },
+  textarea: {
+    width: "100%",
+    border: "1px solid #cbd5e1",
+    borderRadius: "16px",
+    padding: "14px 16px",
+    fontSize: "15px",
+    outline: "none",
+    background: "#ffffff",
+    color: "#0f172a",
+    resize: "vertical",
+  },
+  label: {
+    display: "block",
+    fontWeight: 800,
+    marginBottom: "8px",
+    color: "#334155",
+  },
+  primaryButton: {
+    border: "0",
+    borderRadius: "16px",
+    padding: "14px 20px",
+    background: "linear-gradient(135deg, #2563eb, #4f46e5)",
+    color: "#ffffff",
+    fontWeight: 900,
+    cursor: "pointer",
+    boxShadow: "0 14px 34px rgba(37,99,235,0.22)",
+  },
+  secondaryButton: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "16px",
+    padding: "12px 16px",
+    background: "#ffffff",
+    color: "#0f172a",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  dangerButton: {
+    border: "0",
+    borderRadius: "16px",
+    padding: "12px 16px",
+    background: "#fee2e2",
+    color: "#b91c1c",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  listCard: {
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: "22px",
+    padding: "18px",
+    marginTop: "14px",
+    boxShadow: "0 10px 30px rgba(15,23,42,0.05)",
+  },
+  tableWrap: {
+    overflowX: "auto",
+    border: "1px solid #e2e8f0",
+    borderRadius: "18px",
+    background: "#ffffff",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: "720px",
+  },
+  th: {
+    textAlign: "left",
+    padding: "14px",
+    borderBottom: "1px solid #e2e8f0",
+    background: "#f8fafc",
+    color: "#334155",
+    fontSize: "13px",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+  },
+  td: {
+    padding: "14px",
+    borderBottom: "1px solid #f1f5f9",
+    color: "#0f172a",
+    verticalAlign: "top",
+  },
+  success: {
+    borderRadius: "16px",
+    padding: "14px 16px",
+    background: "#dcfce7",
+    color: "#166534",
+    fontWeight: 800,
+    marginBottom: "12px",
+  },
+  error: {
+    borderRadius: "16px",
+    padding: "14px 16px",
+    background: "#fee2e2",
+    color: "#991b1b",
+    fontWeight: 800,
+    marginBottom: "12px",
+  },
+  empty: {
+    padding: "24px",
+    borderRadius: "20px",
+    background: "#f8fafc",
+    border: "1px dashed #cbd5e1",
+    color: "#64748b",
+    fontWeight: 700,
+  },
+};
+
+function SectionHeader({ icon, title, subtitle }) {
+  return (
+    <div style={styles.cardHeader}>
+      <div>
+        <h2 style={styles.title}>
+          {icon} {title}
+        </h2>
+        {subtitle && <p style={styles.muted}>{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ icon, number, label }) {
+  return (
+    <div style={styles.statCard}>
+      <div style={styles.statIcon}>{icon}</div>
+      <h3 style={styles.statNumber}>{number}</h3>
+      <p style={styles.statLabel}>{label}</p>
+    </div>
+  );
+}
+
+function EmptyState({ text }) {
+  return <div style={styles.empty}>{text}</div>;
+}
+
 export default function TeacherDashboard() {
   const savedUser = useMemo(() => {
     try {
@@ -445,6 +781,25 @@ export default function TeacherDashboard() {
     attendanceRecords.length,
   ]);
 
+  const teacherInitial = String(teacher.name || teacher.email || "T")
+    .trim()
+    .charAt(0)
+    .toUpperCase();
+
+  const profileCompletion = useMemo(() => {
+    const fields = [
+      teacher.name,
+      teacher.email,
+      teacher.role,
+      schoolId,
+      assignedClasses.length > 0,
+    ];
+
+    const completed = fields.filter(Boolean).length;
+
+    return Math.round((completed / fields.length) * 100);
+  }, [teacher, schoolId, assignedClasses.length]);
+
   const getLocalClassItems = (baseKey) => {
     return safeReadStorage(
       getClassScopedStorageKey(baseKey, currentClassName, currentSection),
@@ -482,6 +837,13 @@ export default function TeacherDashboard() {
   const showError = (text) => {
     setError(text);
     setMessage("");
+  };
+
+  const scrollToSection = (id) => {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   };
 
   const getStudentName = (studentIdOrObject) => {
@@ -876,25 +1238,24 @@ export default function TeacherDashboard() {
     return (
       <div
         style={{
-          marginTop: 10,
+          marginTop: 12,
           display: "flex",
           gap: 10,
           flexWrap: "wrap",
         }}
       >
         <a
-          className="small-btn add-btn"
           href={fileUrl}
           target="_blank"
           rel="noreferrer"
-          style={{ textDecoration: "none" }}
+          style={{ ...styles.secondaryButton, textDecoration: "none" }}
         >
           Open File
         </a>
 
         <button
           type="button"
-          className="small-btn add-btn"
+          style={styles.primaryButton}
           onClick={() => handleDownloadFile(filePath)}
         >
           {downloadLabel}
@@ -924,8 +1285,6 @@ export default function TeacherDashboard() {
       teacherName: teacher.name || "",
     };
 
-    // Important fix:
-    // Send only ONE file field. Sending file + taskFile + attachment causes MulterError: Unexpected field.
     if (taskFile) {
       taskPayload.file = taskFile;
     }
@@ -1102,9 +1461,7 @@ export default function TeacherDashboard() {
         localRecords
       );
 
-      setAttendanceRecords((prev) =>
-        mergeUniqueItems(prev, nextLocalRecords)
-      );
+      setAttendanceRecords((prev) => mergeUniqueItems(prev, nextLocalRecords));
 
       showSuccess(
         "Attendance saved locally. Backend attendance route is not ready yet."
@@ -1520,810 +1877,933 @@ export default function TeacherDashboard() {
   };
 
   return (
-    <main className="dashboard-page">
-      <section className="dashboard-card dashboard-header">
-        <div>
-          <h1 className="dashboard-main-title">Teacher Dashboard</h1>
-
-          <p className="dashboard-muted">
-            Logged in as <b>{teacher.name || "Teacher"}</b>
-          </p>
-
-          <p className="dashboard-muted">
-            Current class:{" "}
-            <b>
-              {currentClassName
-                ? `Class ${currentClassName}${
-                    currentSection ? ` Section ${currentSection}` : ""
-                  }`
-                : "Missing"}
-            </b>
-          </p>
-
-          {assignedClasses.length > 1 && (
-            <select
-              className="auth-select"
-              value={selectedClassIndex}
-              onChange={(e) => setSelectedClassIndex(e.target.value)}
-            >
-              {assignedClasses.map((item, index) => (
-                <option key={`${item.className}-${item.section}`} value={index}>
-                  Class {item.className}
-                  {item.section ? ` Section ${item.section}` : ""}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        <button className="logout-btn" onClick={logout}>
-          Logout
-        </button>
-      </section>
-
-      <section className="dashboard-card">
-        {message && <div className="success-box">{message}</div>}
-        {error && <div className="error-box">{error}</div>}
-
-        {!currentClassName && (
-          <div className="error-box">
-            No class assigned to this teacher. Admin must assign class and
-            section from the admin dashboard.
-          </div>
-        )}
-
-        {loading && <p>Loading dashboard data...</p>}
-
-        <button className="primary-btn" type="button" onClick={fetchDashboardData}>
-          Refresh Dashboard
-        </button>
-      </section>
-
-      <section className="dashboard-card">
-        <h2 className="card-title">Overview</h2>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-            gap: 16,
-          }}
-        >
-          <div className="dashboard-card" style={{ margin: 0 }}>
-            <h3>{dashboardStats.assignedClasses}</h3>
-            <p>Assigned Classes</p>
-          </div>
-
-          <div className="dashboard-card" style={{ margin: 0 }}>
-            <h3>{dashboardStats.students}</h3>
-            <p>Students</p>
-          </div>
-
-          <div className="dashboard-card" style={{ margin: 0 }}>
-            <h3>{dashboardStats.tasks}</h3>
-            <p>Homework</p>
-          </div>
-
-          <div className="dashboard-card" style={{ margin: 0 }}>
-            <h3>{dashboardStats.exams}</h3>
-            <p>Exams</p>
-          </div>
-
-          <div className="dashboard-card" style={{ margin: 0 }}>
-            <h3>{dashboardStats.notices}</h3>
-            <p>Notices</p>
-          </div>
-
-          <div className="dashboard-card" style={{ margin: 0 }}>
-            <h3>{dashboardStats.attendanceRecords}</h3>
-            <p>Attendance Records</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="dashboard-card">
-        <h2 className="card-title">My Assigned Classes</h2>
-
-        {assignedClasses.length === 0 ? (
-          <p>No assigned classes found.</p>
-        ) : (
-          <ul className="info-list">
-            {assignedClasses.map((item, index) => (
-              <li key={`${item.className}-${item.section}-${index}`}>
-                <b>Class {item.className}</b>
-                {item.section ? ` Section ${item.section}` : " All Sections"}
-                <br />
-                {Number(selectedClassIndex) === index ? (
-                  <span style={{ color: "green", fontWeight: 700 }}>
-                    Currently selected
-                  </span>
-                ) : (
-                  <button
-                    className="small-btn add-btn"
-                    type="button"
-                    style={{ marginTop: 10 }}
-                    onClick={() => setSelectedClassIndex(String(index))}
-                  >
-                    Open This Class
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="dashboard-card">
-        <h2 className="card-title">Student List</h2>
-
-        {studentsForCurrentClass.length === 0 ? (
-          <p>No students found for this class. Add students from admin first.</p>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                marginTop: 12,
-              }}
-            >
-              <thead>
-                <tr>
-                  <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                    Name
-                  </th>
-                  <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                    Email
-                  </th>
-                  <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                    Class
-                  </th>
-                  <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                    Section
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {studentsForCurrentClass.map((student) => (
-                  <tr key={getId(student)}>
-                    <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                      {student.name || "N/A"}
-                    </td>
-                    <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                      {student.email || "N/A"}
-                    </td>
-                    <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                      {student.className || student.class || currentClassName}
-                    </td>
-                    <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                      {student.section || currentSection || "N/A"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="dashboard-card">
-        <h2 className="card-title">Homework Creation</h2>
-
-        <form onSubmit={handleAddTask}>
-          <div className="form-grid">
-            <input
-              className="auth-input"
-              placeholder="Homework Title"
-              value={taskTitle}
-              onChange={(e) => setTaskTitle(e.target.value)}
-              required
-            />
-
-            <input
-              className="auth-input"
-              placeholder="Subject"
-              value={taskSubject}
-              onChange={(e) => setTaskSubject(e.target.value)}
-              required
-            />
-
-            <input
-              className="auth-input"
-              type="date"
-              value={taskDue}
-              onChange={(e) => setTaskDue(e.target.value)}
-              required
-            />
-
-            <input
-              key={taskFileKey}
-              className="auth-input"
-              type="file"
-              accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
-              onChange={(e) => setTaskFile(e.target.files?.[0] || null)}
-            />
-          </div>
-
-          <div className="auth-form-group">
-            <label>Description / Instructions</label>
-            <textarea
-              className="auth-input"
-              placeholder="Write homework instructions here"
-              value={taskDesc}
-              onChange={(e) => setTaskDesc(e.target.value)}
-              rows={4}
-            />
-          </div>
-
-          {taskFile && (
-            <p className="dashboard-muted">
-              Selected file: <b>{taskFile.name}</b>
-            </p>
-          )}
-
-          <button className="primary-btn" type="submit" disabled={!currentClassName}>
-            Create Homework
-          </button>
-        </form>
-      </section>
-
-      <section className="dashboard-card">
-        <h2 className="card-title">Homework Submissions and Feedback</h2>
-
-        {tasks.length === 0 ? (
-          <p>No homework added yet.</p>
-        ) : (
-          tasks.map((task, taskIndex) => {
-            const taskKey = getTaskKey(task, taskIndex);
-            const taskFilePath = getTaskFilePath(task);
-            const submissionsList = submissionsByTask[taskKey] || [];
-
-            return (
-              <div className="list-card" key={taskKey}>
-                <h3>{task.title || "Untitled Homework"}</h3>
-
-                <p>
-                  <b>Subject:</b> {task.subject || "N/A"}
-                </p>
-
-                <p>
-                  <b>Description:</b> {task.description || "No description"}
-                </p>
-
-                <p>
-                  <b>Class:</b> {task.className || currentClassName}{" "}
-                  <b>Section:</b> {task.section || currentSection || "N/A"}
-                </p>
-
-                {task.dueDate && (
-                  <p>
-                    <b>Due Date:</b>{" "}
-                    {new Date(task.dueDate).toLocaleDateString()}
-                  </p>
-                )}
-
-                {taskFilePath ? (
-                  <>
-                    <p>
-                      <b>Teacher Attached File:</b>{" "}
-                      {getFileNameFromPath(taskFilePath)}
-                    </p>
-                    <FileActions
-                      filePath={taskFilePath}
-                      downloadLabel="Download Homework File"
-                    />
-                  </>
-                ) : (
-                  <p className="dashboard-muted">No teacher file attached.</p>
-                )}
-
-                <hr style={{ margin: "22px 0" }} />
-
-                <h4>Student Submissions</h4>
-
-                {submissionsList.length === 0 ? (
-                  <p>No submissions yet.</p>
-                ) : (
-                  submissionsList.map((submission, submissionIndex) => {
-                    const submissionFilePath = getSubmissionFilePath(submission);
-                    const review = getDisplaySubmissionReview(
-                      task,
-                      submission,
-                      submissionIndex
-                    );
-
-                    return (
-                      <div
-                        className="list-card"
-                        key={review.reviewKey}
-                        style={{ marginTop: 12 }}
-                      >
-                        <p>
-                          <b>Student:</b>{" "}
-                          {submission.studentName ||
-                            submission.student?.name ||
-                            submission.studentId?.name ||
-                            getStudentName(getStudentIdFromSubmission(submission))}
-                        </p>
-
-                        <p>
-                          <b>Email:</b>{" "}
-                          {submission.studentEmail ||
-                            submission.student?.email ||
-                            submission.studentId?.email ||
-                            getStudentEmail(getStudentIdFromSubmission(submission)) ||
-                            "N/A"}
-                        </p>
-
-                        {(submission.answer || submission.submissionText) && (
-                          <p>
-                            <b>Answer:</b>{" "}
-                            {submission.answer || submission.submissionText}
-                          </p>
-                        )}
-
-                        {submission.submittedAt && (
-                          <p>
-                            <b>Submitted At:</b>{" "}
-                            {new Date(submission.submittedAt).toLocaleString()}
-                          </p>
-                        )}
-
-                        {submissionFilePath ? (
-                          <>
-                            <p>
-                              <b>Submitted File:</b>{" "}
-                              {getFileNameFromPath(submissionFilePath)}
-                            </p>
-
-                            <FileActions
-                              filePath={submissionFilePath}
-                              downloadLabel="Download Submitted File"
-                            />
-                          </>
-                        ) : (
-                          <p className="dashboard-muted">No submitted file.</p>
-                        )}
-
-                        <div className="form-grid" style={{ marginTop: 16 }}>
-                          <input
-                            className="auth-input"
-                            type="number"
-                            placeholder="Marks"
-                            value={review.marks}
-                            onChange={(e) =>
-                              handleSubmissionReviewChange(
-                                review.reviewKey,
-                                "marks",
-                                e.target.value
-                              )
-                            }
-                          />
-
-                          <select
-                            className="auth-select"
-                            value={review.status}
-                            onChange={(e) =>
-                              handleSubmissionReviewChange(
-                                review.reviewKey,
-                                "status",
-                                e.target.value
-                              )
-                            }
-                          >
-                            <option value="Submitted">Submitted</option>
-                            <option value="Checked">Checked</option>
-                            <option value="Needs Improvement">
-                              Needs Improvement
-                            </option>
-                            <option value="Late">Late</option>
-                          </select>
-                        </div>
-
-                        <div className="auth-form-group">
-                          <label>Feedback</label>
-                          <textarea
-                            className="auth-input"
-                            placeholder="Write feedback for student"
-                            value={review.feedback}
-                            onChange={(e) =>
-                              handleSubmissionReviewChange(
-                                review.reviewKey,
-                                "feedback",
-                                e.target.value
-                              )
-                            }
-                            rows={3}
-                          />
-                        </div>
-
-                        <button
-                          className="small-btn add-btn"
-                          type="button"
-                          onClick={() =>
-                            handleSaveSubmissionReview(
-                              task,
-                              submission,
-                              submissionIndex
-                            )
-                          }
-                          disabled={savingReviewKey === review.reviewKey}
-                        >
-                          {savingReviewKey === review.reviewKey
-                            ? "Saving..."
-                            : "Save Marks and Feedback"}
-                        </button>
-                      </div>
-                    );
-                  })
-                )}
+    <main style={styles.page}>
+      <div style={styles.shell}>
+        <section style={styles.hero}>
+          <div style={styles.heroGrid}>
+            <div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <span style={styles.badge}>🟢 Teacher Portal</span>
+                <span style={styles.badge}>
+                  Class {currentClassName || "Not assigned"}
+                  {currentSection ? ` - Section ${currentSection}` : ""}
+                </span>
               </div>
-            );
-          })
-        )}
-      </section>
 
-      <section className="dashboard-card">
-        <h2 className="card-title">Attendance</h2>
+              <h1 style={styles.heroTitle}>Teacher Dashboard</h1>
 
-        <form onSubmit={handleSaveAttendance}>
-          <div className="form-grid">
-            <input
-              className="auth-input"
-              type="date"
-              value={attendanceDate}
-              onChange={(e) => setAttendanceDate(e.target.value)}
-              required
-            />
+              <p style={styles.heroSubtitle}>
+                Manage homework, attendance, exams, notices, submissions and
+                student progress from one clean professional dashboard.
+              </p>
 
-            <button
-              className="small-btn add-btn"
-              type="button"
-              onClick={() => setAllAttendanceStatus("Present")}
-            >
-              Mark All Present
-            </button>
+              <div style={styles.heroActions}>
+                <button
+                  type="button"
+                  style={styles.whiteButton}
+                  onClick={fetchDashboardData}
+                >
+                  {loading ? "Refreshing..." : "Refresh Dashboard"}
+                </button>
 
-            <button
-              className="small-btn remove-btn"
-              type="button"
-              onClick={() => setAllAttendanceStatus("Absent")}
-            >
-              Mark All Absent
-            </button>
+                <button
+                  type="button"
+                  style={styles.ghostButton}
+                  onClick={() => scrollToSection("homework")}
+                >
+                  Create Homework
+                </button>
 
-            <button
-              className="small-btn add-btn"
-              type="button"
-              onClick={() => setAllAttendanceStatus("Late")}
-            >
-              Mark All Late
-            </button>
-          </div>
+                <button type="button" style={styles.logoutButton} onClick={logout}>
+                  Logout
+                </button>
+              </div>
+            </div>
 
-          {studentsForCurrentClass.length === 0 ? (
-            <p>No students found for this class.</p>
-          ) : (
-            <div style={{ overflowX: "auto", marginTop: 16 }}>
-              <table
+            <aside style={styles.profilePanel}>
+              <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                <div style={styles.avatar}>{teacherInitial}</div>
+
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>
+                    {teacher.name || "Teacher"}
+                  </h2>
+                  <p style={{ margin: "5px 0", color: "rgba(255,255,255,0.82)" }}>
+                    {teacher.email || "No email found"}
+                  </p>
+                  <span style={styles.badge}>Verified Teacher Account</span>
+                </div>
+              </div>
+
+              <div
                 style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
+                  marginTop: 20,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 12,
                 }}
               >
+                <div>
+                  <p style={{ margin: 0, color: "rgba(255,255,255,0.7)" }}>
+                    Role
+                  </p>
+                  <b>{teacher.role || "Teacher"}</b>
+                </div>
+
+                <div>
+                  <p style={{ margin: 0, color: "rgba(255,255,255,0.7)" }}>
+                    Classes
+                  </p>
+                  <b>{assignedClasses.length}</b>
+                </div>
+
+                <div>
+                  <p style={{ margin: 0, color: "rgba(255,255,255,0.7)" }}>
+                    School ID
+                  </p>
+                  <b>{schoolId ? "Connected" : "Missing"}</b>
+                </div>
+
+                <div>
+                  <p style={{ margin: 0, color: "rgba(255,255,255,0.7)" }}>
+                    Profile
+                  </p>
+                  <b>{profileCompletion}% Complete</b>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  height: 10,
+                  borderRadius: 999,
+                  background: "rgba(255,255,255,0.2)",
+                  overflow: "hidden",
+                  marginTop: 18,
+                }}
+              >
+                <div
+                  style={{
+                    width: `${profileCompletion}%`,
+                    height: "100%",
+                    background: "#ffffff",
+                    borderRadius: 999,
+                  }}
+                />
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section style={styles.card}>
+          {message && <div style={styles.success}>{message}</div>}
+          {error && <div style={styles.error}>{error}</div>}
+
+          {!currentClassName && (
+            <div style={styles.error}>
+              No class assigned to this teacher. Admin must assign class and
+              section from the admin dashboard.
+            </div>
+          )}
+
+          <div style={styles.quickNav}>
+            <button style={styles.navButton} onClick={() => scrollToSection("profile")}>
+              👤 Profile
+            </button>
+            <button style={styles.navButton} onClick={() => scrollToSection("students")}>
+              👨‍🎓 Students
+            </button>
+            <button style={styles.navButton} onClick={() => scrollToSection("homework")}>
+              📚 Homework
+            </button>
+            <button style={styles.navButton} onClick={() => scrollToSection("submissions")}>
+              ✅ Submissions
+            </button>
+            <button style={styles.navButton} onClick={() => scrollToSection("attendance")}>
+              🗓️ Attendance
+            </button>
+            <button style={styles.navButton} onClick={() => scrollToSection("exams")}>
+              📝 Exams
+            </button>
+            <button style={styles.navButton} onClick={() => scrollToSection("notices")}>
+              📢 Notices
+            </button>
+          </div>
+        </section>
+
+        <section style={styles.card}>
+          <SectionHeader
+            icon="📊"
+            title="Overview"
+            subtitle="Live summary of your assigned class activities."
+          />
+
+          <div style={styles.grid}>
+            <StatCard
+              icon="🏫"
+              number={dashboardStats.assignedClasses}
+              label="Assigned Classes"
+            />
+            <StatCard icon="👨‍🎓" number={dashboardStats.students} label="Students" />
+            <StatCard icon="📚" number={dashboardStats.tasks} label="Homework" />
+            <StatCard icon="📝" number={dashboardStats.exams} label="Exams" />
+            <StatCard icon="📢" number={dashboardStats.notices} label="Notices" />
+            <StatCard
+              icon="🗓️"
+              number={dashboardStats.attendanceRecords}
+              label="Attendance Records"
+            />
+          </div>
+        </section>
+
+        <section id="profile" style={styles.card}>
+          <SectionHeader
+            icon="👤"
+            title="Teacher Profile"
+            subtitle="This makes the account look more like a real app profile system."
+          />
+
+          <div style={styles.grid}>
+            <div style={styles.statCard}>
+              <p style={styles.muted}>Full Name</p>
+              <h3>{teacher.name || "Teacher"}</h3>
+            </div>
+
+            <div style={styles.statCard}>
+              <p style={styles.muted}>Email</p>
+              <h3 style={{ fontSize: 18 }}>{teacher.email || "N/A"}</h3>
+            </div>
+
+            <div style={styles.statCard}>
+              <p style={styles.muted}>Current Class</p>
+              <h3>
+                {currentClassName
+                  ? `Class ${currentClassName}${
+                      currentSection ? ` Section ${currentSection}` : ""
+                    }`
+                  : "Missing"}
+              </h3>
+            </div>
+
+            <div style={styles.statCard}>
+              <p style={styles.muted}>Account Status</p>
+              <h3>Active</h3>
+            </div>
+          </div>
+
+          {assignedClasses.length > 1 && (
+            <div style={{ marginTop: 20, maxWidth: 480 }}>
+              <label style={styles.label}>Switch Assigned Class</label>
+              <select
+                style={styles.input}
+                value={selectedClassIndex}
+                onChange={(e) => setSelectedClassIndex(e.target.value)}
+              >
+                {assignedClasses.map((item, index) => (
+                  <option key={`${item.className}-${item.section}`} value={index}>
+                    Class {item.className}
+                    {item.section ? ` Section ${item.section}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </section>
+
+        <section style={styles.card}>
+          <SectionHeader
+            icon="🏫"
+            title="My Assigned Classes"
+            subtitle="Classes connected to this teacher account."
+          />
+
+          {assignedClasses.length === 0 ? (
+            <EmptyState text="No assigned classes found." />
+          ) : (
+            <div style={styles.grid}>
+              {assignedClasses.map((item, index) => (
+                <div style={styles.statCard} key={`${item.className}-${item.section}-${index}`}>
+                  <h3>
+                    Class {item.className}
+                    {item.section ? ` Section ${item.section}` : " All Sections"}
+                  </h3>
+
+                  {Number(selectedClassIndex) === index ? (
+                    <p style={{ color: "#16a34a", fontWeight: 900 }}>
+                      Currently selected
+                    </p>
+                  ) : (
+                    <button
+                      style={styles.primaryButton}
+                      type="button"
+                      onClick={() => setSelectedClassIndex(String(index))}
+                    >
+                      Open This Class
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section id="students" style={styles.card}>
+          <SectionHeader
+            icon="👨‍🎓"
+            title="Student List"
+            subtitle="Students available in the selected class."
+          />
+
+          {studentsForCurrentClass.length === 0 ? (
+            <EmptyState text="No students found for this class. Add students from admin first." />
+          ) : (
+            <div style={styles.tableWrap}>
+              <table style={styles.table}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                      Student
-                    </th>
-                    <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                      Email
-                    </th>
-                    <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                      Status
-                    </th>
+                    <th style={styles.th}>Name</th>
+                    <th style={styles.th}>Email</th>
+                    <th style={styles.th}>Class</th>
+                    <th style={styles.th}>Section</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {studentsForCurrentClass.map((student) => {
-                    const studentId = getId(student);
-
-                    return (
-                      <tr key={studentId}>
-                        <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                          {student.name || "N/A"}
-                        </td>
-                        <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                          {student.email || "N/A"}
-                        </td>
-                        <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                          <select
-                            className="auth-select"
-                            value={attendanceMap[studentId] || "Present"}
-                            onChange={(e) =>
-                              handleAttendanceStatusChange(
-                                studentId,
-                                e.target.value
-                              )
-                            }
-                          >
-                            {ATTENDANCE_STATUS_OPTIONS.map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {studentsForCurrentClass.map((student) => (
+                    <tr key={getId(student)}>
+                      <td style={styles.td}>
+                        <b>{student.name || "N/A"}</b>
+                      </td>
+                      <td style={styles.td}>{student.email || "N/A"}</td>
+                      <td style={styles.td}>
+                        {student.className || student.class || currentClassName}
+                      </td>
+                      <td style={styles.td}>{student.section || currentSection || "N/A"}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           )}
+        </section>
 
-          <button
-            className="primary-btn"
-            type="submit"
-            disabled={
-              !currentClassName ||
-              studentsForCurrentClass.length === 0 ||
-              savingAttendance
-            }
-          >
-            {savingAttendance ? "Saving..." : "Save Attendance"}
-          </button>
-        </form>
+        <section id="homework" style={styles.card}>
+          <SectionHeader
+            icon="📚"
+            title="Homework Creation"
+            subtitle="Create homework with description, due date and optional file."
+          />
 
-        <hr style={{ margin: "24px 0" }} />
+          <form onSubmit={handleAddTask}>
+            <div style={styles.formGrid}>
+              <input
+                style={styles.input}
+                placeholder="Homework Title"
+                value={taskTitle}
+                onChange={(e) => setTaskTitle(e.target.value)}
+                required
+              />
 
-        <h3>Attendance Records</h3>
+              <input
+                style={styles.input}
+                placeholder="Subject"
+                value={taskSubject}
+                onChange={(e) => setTaskSubject(e.target.value)}
+                required
+              />
 
-        {attendanceRecords.length === 0 ? (
-          <p>No attendance records found.</p>
-        ) : (
-          attendanceRecords.slice(0, 30).map((record, index) => (
-            <div className="list-card" key={record._id || record.id || record.localId || index}>
-              <b>{getAttendanceStudentName(record)}</b>
-              <p>Status: {record.status || "N/A"}</p>
-              <p>Date: {getAttendanceDate(record)}</p>
-              {record.savedMode === "local" && (
-                <p className="dashboard-muted">Saved locally only</p>
-              )}
+              <input
+                style={styles.input}
+                type="date"
+                value={taskDue}
+                onChange={(e) => setTaskDue(e.target.value)}
+                required
+              />
+
+              <input
+                key={taskFileKey}
+                style={styles.input}
+                type="file"
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                onChange={(e) => setTaskFile(e.target.files?.[0] || null)}
+              />
             </div>
-          ))
-        )}
-      </section>
 
-      <section className="dashboard-card">
-        <h2 className="card-title">Create Exam</h2>
+            <div style={{ marginTop: 16 }}>
+              <label style={styles.label}>Description / Instructions</label>
+              <textarea
+                style={styles.textarea}
+                placeholder="Write homework instructions here"
+                value={taskDesc}
+                onChange={(e) => setTaskDesc(e.target.value)}
+                rows={4}
+              />
+            </div>
 
-        <form onSubmit={handleAddExam}>
-          <div className="form-grid">
-            <input
-              className="auth-input"
-              placeholder="Exam Title"
-              value={examTitle}
-              onChange={(e) => setExamTitle(e.target.value)}
-              required
-            />
-
-            <input
-              className="auth-input"
-              placeholder="Subject"
-              value={examSubject}
-              onChange={(e) => setExamSubject(e.target.value)}
-              required
-            />
-
-            <input
-              className="auth-input"
-              type="date"
-              value={examDate}
-              onChange={(e) => setExamDate(e.target.value)}
-              required
-            />
-
-            <input
-              className="auth-input"
-              type="number"
-              placeholder="Max Marks"
-              value={examMaxMarks}
-              onChange={(e) => setExamMaxMarks(e.target.value)}
-              required
-            />
-          </div>
-
-          <button
-            className="primary-btn"
-            type="submit"
-            disabled={!currentClassName || savingExam}
-          >
-            {savingExam ? "Saving..." : "Add Exam"}
-          </button>
-        </form>
-
-        <hr style={{ margin: "24px 0" }} />
-
-        <h3>Exams and Marks Entry</h3>
-
-        {exams.length === 0 ? (
-          <p>No exams added yet.</p>
-        ) : (
-          exams.map((exam, examIndex) => (
-            <div className="list-card" key={getExamId(exam) || examIndex}>
-              <h3>{exam.title || "Untitled Exam"}</h3>
-
-              {exam.savedMode === "local" && (
-                <p className="dashboard-muted">Saved locally only</p>
-              )}
-
-              <p>
-                <b>Subject:</b> {exam.subject || "N/A"}
+            {taskFile && (
+              <p style={styles.muted}>
+                Selected file: <b>{taskFile.name}</b>
               </p>
+            )}
 
-              {exam.date && (
-                <p>
-                  <b>Date:</b> {new Date(exam.date).toLocaleDateString()}
-                </p>
-              )}
+            <button
+              style={{ ...styles.primaryButton, marginTop: 16 }}
+              type="submit"
+              disabled={!currentClassName}
+            >
+              Create Homework
+            </button>
+          </form>
+        </section>
 
-              <p>
-                <b>Max Marks:</b> {exam.maxMarks || exam.totalMarks || "N/A"}
-              </p>
+        <section id="submissions" style={styles.card}>
+          <SectionHeader
+            icon="✅"
+            title="Homework Submissions and Feedback"
+            subtitle="Check student submissions, download files, give marks and feedback."
+          />
 
-              {studentsForCurrentClass.length === 0 ? (
-                <p>No students available for marks entry.</p>
-              ) : (
-                <div style={{ overflowX: "auto", marginTop: 12 }}>
-                  <table
-                    style={{
-                      width: "100%",
-                      borderCollapse: "collapse",
-                    }}
-                  >
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                          Student
-                        </th>
-                        <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                          Marks
-                        </th>
-                        <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                          Remarks
-                        </th>
-                        <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                          Action
-                        </th>
-                      </tr>
-                    </thead>
+          {tasks.length === 0 ? (
+            <EmptyState text="No homework added yet." />
+          ) : (
+            tasks.map((task, taskIndex) => {
+              const taskKey = getTaskKey(task, taskIndex);
+              const taskFilePath = getTaskFilePath(task);
+              const submissionsList = submissionsByTask[taskKey] || [];
 
-                    <tbody>
-                      {studentsForCurrentClass.map((student) => {
-                        const markKey = getExamMarkKey(exam, student);
-                        const mark = examMarks[markKey] || {};
+              return (
+                <div style={styles.listCard} key={taskKey}>
+                  <h3>{task.title || "Untitled Homework"}</h3>
 
-                        return (
-                          <tr key={markKey}>
-                            <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                              {student.name || "N/A"}
-                              <br />
-                              <small>{student.email || ""}</small>
-                            </td>
+                  <p>
+                    <b>Subject:</b> {task.subject || "N/A"}
+                  </p>
 
-                            <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                              <input
-                                className="auth-input"
-                                type="number"
-                                placeholder="Marks"
-                                value={mark.obtainedMarks ?? ""}
-                                onChange={(e) =>
-                                  handleExamMarkChange(
-                                    markKey,
-                                    "obtainedMarks",
-                                    e.target.value
-                                  )
-                                }
+                  <p>
+                    <b>Description:</b> {task.description || "No description"}
+                  </p>
+
+                  <p>
+                    <b>Class:</b> {task.className || currentClassName}{" "}
+                    <b>Section:</b> {task.section || currentSection || "N/A"}
+                  </p>
+
+                  {task.dueDate && (
+                    <p>
+                      <b>Due Date:</b>{" "}
+                      {new Date(task.dueDate).toLocaleDateString()}
+                    </p>
+                  )}
+
+                  {taskFilePath ? (
+                    <>
+                      <p>
+                        <b>Teacher Attached File:</b>{" "}
+                        {getFileNameFromPath(taskFilePath)}
+                      </p>
+                      <FileActions
+                        filePath={taskFilePath}
+                        downloadLabel="Download Homework File"
+                      />
+                    </>
+                  ) : (
+                    <p style={styles.muted}>No teacher file attached.</p>
+                  )}
+
+                  <hr style={{ margin: "22px 0", borderColor: "#e2e8f0" }} />
+
+                  <h4>Student Submissions</h4>
+
+                  {submissionsList.length === 0 ? (
+                    <EmptyState text="No submissions yet." />
+                  ) : (
+                    submissionsList.map((submission, submissionIndex) => {
+                      const submissionFilePath = getSubmissionFilePath(submission);
+                      const review = getDisplaySubmissionReview(
+                        task,
+                        submission,
+                        submissionIndex
+                      );
+
+                      return (
+                        <div style={styles.listCard} key={review.reviewKey}>
+                          <p>
+                            <b>Student:</b>{" "}
+                            {submission.studentName ||
+                              submission.student?.name ||
+                              submission.studentId?.name ||
+                              getStudentName(getStudentIdFromSubmission(submission))}
+                          </p>
+
+                          <p>
+                            <b>Email:</b>{" "}
+                            {submission.studentEmail ||
+                              submission.student?.email ||
+                              submission.studentId?.email ||
+                              getStudentEmail(getStudentIdFromSubmission(submission)) ||
+                              "N/A"}
+                          </p>
+
+                          {(submission.answer || submission.submissionText) && (
+                            <p>
+                              <b>Answer:</b>{" "}
+                              {submission.answer || submission.submissionText}
+                            </p>
+                          )}
+
+                          {submission.submittedAt && (
+                            <p>
+                              <b>Submitted At:</b>{" "}
+                              {new Date(submission.submittedAt).toLocaleString()}
+                            </p>
+                          )}
+
+                          {submissionFilePath ? (
+                            <>
+                              <p>
+                                <b>Submitted File:</b>{" "}
+                                {getFileNameFromPath(submissionFilePath)}
+                              </p>
+
+                              <FileActions
+                                filePath={submissionFilePath}
+                                downloadLabel="Download Submitted File"
                               />
-                            </td>
+                            </>
+                          ) : (
+                            <p style={styles.muted}>No submitted file.</p>
+                          )}
 
-                            <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                              <input
-                                className="auth-input"
-                                placeholder="Remarks"
-                                value={mark.remarks || ""}
-                                onChange={(e) =>
-                                  handleExamMarkChange(
-                                    markKey,
-                                    "remarks",
-                                    e.target.value
-                                  )
-                                }
-                              />
-                            </td>
+                          <div style={{ ...styles.formGrid, marginTop: 16 }}>
+                            <input
+                              style={styles.input}
+                              type="number"
+                              placeholder="Marks"
+                              value={review.marks}
+                              onChange={(e) =>
+                                handleSubmissionReviewChange(
+                                  review.reviewKey,
+                                  "marks",
+                                  e.target.value
+                                )
+                              }
+                            />
 
-                            <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                              <button
-                                className="small-btn add-btn"
-                                type="button"
-                                onClick={() => handleSaveExamMark(exam, student)}
-                                disabled={savingExamMarkKey === markKey}
-                              >
-                                {savingExamMarkKey === markKey
-                                  ? "Saving..."
-                                  : "Save"}
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            <select
+                              style={styles.input}
+                              value={review.status}
+                              onChange={(e) =>
+                                handleSubmissionReviewChange(
+                                  review.reviewKey,
+                                  "status",
+                                  e.target.value
+                                )
+                              }
+                            >
+                              <option value="Submitted">Submitted</option>
+                              <option value="Checked">Checked</option>
+                              <option value="Needs Improvement">Needs Improvement</option>
+                              <option value="Late">Late</option>
+                            </select>
+                          </div>
+
+                          <div style={{ marginTop: 16 }}>
+                            <label style={styles.label}>Feedback</label>
+                            <textarea
+                              style={styles.textarea}
+                              placeholder="Write feedback for student"
+                              value={review.feedback}
+                              onChange={(e) =>
+                                handleSubmissionReviewChange(
+                                  review.reviewKey,
+                                  "feedback",
+                                  e.target.value
+                                )
+                              }
+                              rows={3}
+                            />
+                          </div>
+
+                          <button
+                            style={{ ...styles.primaryButton, marginTop: 14 }}
+                            type="button"
+                            onClick={() =>
+                              handleSaveSubmissionReview(
+                                task,
+                                submission,
+                                submissionIndex
+                              )
+                            }
+                            disabled={savingReviewKey === review.reviewKey}
+                          >
+                            {savingReviewKey === review.reviewKey
+                              ? "Saving..."
+                              : "Save Marks and Feedback"}
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
-              )}
+              );
+            })
+          )}
+        </section>
+
+        <section id="attendance" style={styles.card}>
+          <SectionHeader
+            icon="🗓️"
+            title="Attendance"
+            subtitle="Mark student attendance for the selected class."
+          />
+
+          <form onSubmit={handleSaveAttendance}>
+            <div style={styles.formGrid}>
+              <input
+                style={styles.input}
+                type="date"
+                value={attendanceDate}
+                onChange={(e) => setAttendanceDate(e.target.value)}
+                required
+              />
+
+              <button
+                style={styles.secondaryButton}
+                type="button"
+                onClick={() => setAllAttendanceStatus("Present")}
+              >
+                Mark All Present
+              </button>
+
+              <button
+                style={styles.dangerButton}
+                type="button"
+                onClick={() => setAllAttendanceStatus("Absent")}
+              >
+                Mark All Absent
+              </button>
+
+              <button
+                style={styles.secondaryButton}
+                type="button"
+                onClick={() => setAllAttendanceStatus("Late")}
+              >
+                Mark All Late
+              </button>
             </div>
-          ))
-        )}
-      </section>
 
-      <section className="dashboard-card">
-        <h2 className="card-title">Create Notice</h2>
+            {studentsForCurrentClass.length === 0 ? (
+              <div style={{ marginTop: 16 }}>
+                <EmptyState text="No students found for this class." />
+              </div>
+            ) : (
+              <div style={{ ...styles.tableWrap, marginTop: 16 }}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>Student</th>
+                      <th style={styles.th}>Email</th>
+                      <th style={styles.th}>Status</th>
+                    </tr>
+                  </thead>
 
-        <form onSubmit={handleAddNotice}>
-          <div className="form-grid">
-            <input
-              className="auth-input"
-              placeholder="Notice Title"
-              value={noticeTitle}
-              onChange={(e) => setNoticeTitle(e.target.value)}
-              required
-            />
+                  <tbody>
+                    {studentsForCurrentClass.map((student) => {
+                      const studentId = getId(student);
 
-            <textarea
-              className="auth-input"
-              placeholder="Notice Content"
-              value={noticeContent}
-              onChange={(e) => setNoticeContent(e.target.value)}
-              required
-              rows={4}
-            />
-          </div>
+                      return (
+                        <tr key={studentId}>
+                          <td style={styles.td}>
+                            <b>{student.name || "N/A"}</b>
+                          </td>
+                          <td style={styles.td}>{student.email || "N/A"}</td>
+                          <td style={styles.td}>
+                            <select
+                              style={styles.input}
+                              value={attendanceMap[studentId] || "Present"}
+                              onChange={(e) =>
+                                handleAttendanceStatusChange(
+                                  studentId,
+                                  e.target.value
+                                )
+                              }
+                            >
+                              {ATTENDANCE_STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>
+                                  {status}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-          <button
-            className="primary-btn"
-            type="submit"
-            disabled={!currentClassName || savingNotice}
-          >
-            {savingNotice ? "Saving..." : "Add Notice"}
-          </button>
-        </form>
+            <button
+              style={{ ...styles.primaryButton, marginTop: 16 }}
+              type="submit"
+              disabled={
+                !currentClassName ||
+                studentsForCurrentClass.length === 0 ||
+                savingAttendance
+              }
+            >
+              {savingAttendance ? "Saving..." : "Save Attendance"}
+            </button>
+          </form>
 
-        <hr style={{ margin: "24px 0" }} />
+          <hr style={{ margin: "24px 0", borderColor: "#e2e8f0" }} />
 
-        <h3>Notices</h3>
+          <h3>Attendance Records</h3>
 
-        {notices.length === 0 ? (
-          <p>No notices added yet.</p>
-        ) : (
-          notices.map((notice, index) => (
-            <div className="list-card" key={notice._id || notice.id || notice.localId || index}>
-              <b>{notice.title || "Untitled Notice"}</b>
-              <p>
-                {notice.message ||
-                  notice.content ||
-                  notice.description ||
-                  "No content"}
-              </p>
-              {notice.savedMode === "local" && (
-                <p className="dashboard-muted">Saved locally only</p>
-              )}
+          {attendanceRecords.length === 0 ? (
+            <EmptyState text="No attendance records found." />
+          ) : (
+            attendanceRecords.slice(0, 30).map((record, index) => (
+              <div
+                style={styles.listCard}
+                key={record._id || record.id || record.localId || index}
+              >
+                <b>{getAttendanceStudentName(record)}</b>
+                <p>Status: {record.status || "N/A"}</p>
+                <p>Date: {getAttendanceDate(record)}</p>
+                {record.savedMode === "local" && (
+                  <p style={styles.muted}>Saved locally only</p>
+                )}
+              </div>
+            ))
+          )}
+        </section>
+
+        <section id="exams" style={styles.card}>
+          <SectionHeader
+            icon="📝"
+            title="Create Exam"
+            subtitle="Create exams and add marks for each student."
+          />
+
+          <form onSubmit={handleAddExam}>
+            <div style={styles.formGrid}>
+              <input
+                style={styles.input}
+                placeholder="Exam Title"
+                value={examTitle}
+                onChange={(e) => setExamTitle(e.target.value)}
+                required
+              />
+
+              <input
+                style={styles.input}
+                placeholder="Subject"
+                value={examSubject}
+                onChange={(e) => setExamSubject(e.target.value)}
+                required
+              />
+
+              <input
+                style={styles.input}
+                type="date"
+                value={examDate}
+                onChange={(e) => setExamDate(e.target.value)}
+                required
+              />
+
+              <input
+                style={styles.input}
+                type="number"
+                placeholder="Max Marks"
+                value={examMaxMarks}
+                onChange={(e) => setExamMaxMarks(e.target.value)}
+                required
+              />
             </div>
-          ))
-        )}
-      </section>
+
+            <button
+              style={{ ...styles.primaryButton, marginTop: 16 }}
+              type="submit"
+              disabled={!currentClassName || savingExam}
+            >
+              {savingExam ? "Saving..." : "Add Exam"}
+            </button>
+          </form>
+
+          <hr style={{ margin: "24px 0", borderColor: "#e2e8f0" }} />
+
+          <h3>Exams and Marks Entry</h3>
+
+          {exams.length === 0 ? (
+            <EmptyState text="No exams added yet." />
+          ) : (
+            exams.map((exam, examIndex) => (
+              <div style={styles.listCard} key={getExamId(exam) || examIndex}>
+                <h3>{exam.title || "Untitled Exam"}</h3>
+
+                {exam.savedMode === "local" && (
+                  <p style={styles.muted}>Saved locally only</p>
+                )}
+
+                <p>
+                  <b>Subject:</b> {exam.subject || "N/A"}
+                </p>
+
+                {exam.date && (
+                  <p>
+                    <b>Date:</b> {new Date(exam.date).toLocaleDateString()}
+                  </p>
+                )}
+
+                <p>
+                  <b>Max Marks:</b> {exam.maxMarks || exam.totalMarks || "N/A"}
+                </p>
+
+                {studentsForCurrentClass.length === 0 ? (
+                  <EmptyState text="No students available for marks entry." />
+                ) : (
+                  <div style={{ ...styles.tableWrap, marginTop: 12 }}>
+                    <table style={styles.table}>
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Student</th>
+                          <th style={styles.th}>Marks</th>
+                          <th style={styles.th}>Remarks</th>
+                          <th style={styles.th}>Action</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {studentsForCurrentClass.map((student) => {
+                          const markKey = getExamMarkKey(exam, student);
+                          const mark = examMarks[markKey] || {};
+
+                          return (
+                            <tr key={markKey}>
+                              <td style={styles.td}>
+                                <b>{student.name || "N/A"}</b>
+                                <br />
+                                <small>{student.email || ""}</small>
+                              </td>
+
+                              <td style={styles.td}>
+                                <input
+                                  style={styles.input}
+                                  type="number"
+                                  placeholder="Marks"
+                                  value={mark.obtainedMarks ?? ""}
+                                  onChange={(e) =>
+                                    handleExamMarkChange(
+                                      markKey,
+                                      "obtainedMarks",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </td>
+
+                              <td style={styles.td}>
+                                <input
+                                  style={styles.input}
+                                  placeholder="Remarks"
+                                  value={mark.remarks || ""}
+                                  onChange={(e) =>
+                                    handleExamMarkChange(
+                                      markKey,
+                                      "remarks",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </td>
+
+                              <td style={styles.td}>
+                                <button
+                                  style={styles.primaryButton}
+                                  type="button"
+                                  onClick={() => handleSaveExamMark(exam, student)}
+                                  disabled={savingExamMarkKey === markKey}
+                                >
+                                  {savingExamMarkKey === markKey
+                                    ? "Saving..."
+                                    : "Save"}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </section>
+
+        <section id="notices" style={styles.card}>
+          <SectionHeader
+            icon="📢"
+            title="Create Notice"
+            subtitle="Publish announcements for students in the selected class."
+          />
+
+          <form onSubmit={handleAddNotice}>
+            <div style={styles.formGrid}>
+              <input
+                style={styles.input}
+                placeholder="Notice Title"
+                value={noticeTitle}
+                onChange={(e) => setNoticeTitle(e.target.value)}
+                required
+              />
+
+              <textarea
+                style={styles.textarea}
+                placeholder="Notice Content"
+                value={noticeContent}
+                onChange={(e) => setNoticeContent(e.target.value)}
+                required
+                rows={4}
+              />
+            </div>
+
+            <button
+              style={{ ...styles.primaryButton, marginTop: 16 }}
+              type="submit"
+              disabled={!currentClassName || savingNotice}
+            >
+              {savingNotice ? "Saving..." : "Add Notice"}
+            </button>
+          </form>
+
+          <hr style={{ margin: "24px 0", borderColor: "#e2e8f0" }} />
+
+          <h3>Notices</h3>
+
+          {notices.length === 0 ? (
+            <EmptyState text="No notices added yet." />
+          ) : (
+            notices.map((notice, index) => (
+              <div
+                style={styles.listCard}
+                key={notice._id || notice.id || notice.localId || index}
+              >
+                <b>{notice.title || "Untitled Notice"}</b>
+                <p>
+                  {notice.message ||
+                    notice.content ||
+                    notice.description ||
+                    "No content"}
+                </p>
+                {notice.savedMode === "local" && (
+                  <p style={styles.muted}>Saved locally only</p>
+                )}
+              </div>
+            ))
+          )}
+        </section>
+      </div>
     </main>
   );
 }
