@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { login } from "../api";
+import { API_URL, getApiErrorMessage, login } from "../api";
 import "../styles/App.css";
 
 export default function Login() {
@@ -47,6 +47,8 @@ export default function Login() {
     try {
       setLoading(true);
 
+      console.log("LOGIN API URL:", API_URL);
+
       const res = await login({
         email,
         password,
@@ -88,8 +90,10 @@ export default function Login() {
       console.log("LOGIN ERROR:", err.response?.data || err.message);
 
       setError(
-        err.response?.data?.message ||
+        getApiErrorMessage(
+          err,
           "Login failed. Please check your email and password."
+        )
       );
     } finally {
       setLoading(false);

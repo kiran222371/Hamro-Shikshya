@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { signup } from "../api";
+import { API_URL, getApiErrorMessage, signup } from "../api";
 import "../styles/App.css";
 
 export default function Signup() {
@@ -31,22 +31,22 @@ export default function Signup() {
     e.preventDefault();
     setError("");
 
-    if (
-      !form.name.trim() ||
-      !form.email.trim() ||
-      !form.password.trim() ||
-      !form.schoolName.trim()
-    ) {
+    const name = form.name.trim();
+    const email = form.email.trim().toLowerCase();
+    const schoolName = form.schoolName.trim();
+    const password = form.password;
+
+    if (!name || !email || !password || !form.confirmPassword || !schoolName) {
       setError("Please fill in all fields.");
       return;
     }
 
-    if (form.password.length < 6) {
+    if (password.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
     }
 
-    if (form.password !== form.confirmPassword) {
+    if (password !== form.confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
@@ -54,11 +54,14 @@ export default function Signup() {
     try {
       setLoading(true);
 
+      console.log("SIGNUP API URL:", API_URL);
+
       await signup({
-        name: form.name.trim(),
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
-        schoolName: form.schoolName.trim(),
+        name,
+        fullName: name,
+        email,
+        password,
+        schoolName,
         role: "admin",
       });
 
@@ -67,7 +70,7 @@ export default function Signup() {
     } catch (err) {
       console.log("SIGNUP ERROR:", err.response?.data || err.message);
 
-      setError(err.response?.data?.message || "Signup failed. Try again.");
+      setError(getApiErrorMessage(err, "Signup failed. Try again."));
     } finally {
       setLoading(false);
     }
@@ -101,6 +104,8 @@ export default function Signup() {
                 placeholder="Enter full name"
                 value={form.name}
                 onChange={handleChange}
+                autoComplete="name"
+                required
               />
             </div>
 
@@ -113,6 +118,8 @@ export default function Signup() {
                 placeholder="Enter your email"
                 value={form.email}
                 onChange={handleChange}
+                autoComplete="email"
+                required
               />
             </div>
 
@@ -127,6 +134,8 @@ export default function Signup() {
                   placeholder="Enter password"
                   value={form.password}
                   onChange={handleChange}
+                  autoComplete="new-password"
+                  required
                 />
 
                 <button
@@ -150,6 +159,8 @@ export default function Signup() {
                   placeholder="Confirm password"
                   value={form.confirmPassword}
                   onChange={handleChange}
+                  autoComplete="new-password"
+                  required
                 />
 
                 <button
@@ -171,6 +182,7 @@ export default function Signup() {
                 placeholder="Enter school name"
                 value={form.schoolName}
                 onChange={handleChange}
+                required
               />
             </div>
 

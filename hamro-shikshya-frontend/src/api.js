@@ -1,20 +1,51 @@
 import axios from "axios";
 
+const DEPLOYED_BACKEND_API_URL =
+  "https://hamro-shikshya-backend.onrender.com/api";
+
 const getEnvValue = (key, fallback = "") => {
   try {
     if (typeof process !== "undefined" && process.env && process.env[key]) {
       return process.env[key];
     }
+
     return fallback;
   } catch {
     return fallback;
   }
 };
 
-const removeTrailingSlash = (value) => String(value || "").replace(/\/$/, "");
+const removeTrailingSlash = (value) =>
+  String(value || "").replace(/\/+$/, "");
 
-const rawApiUrl =
-  getEnvValue("REACT_APP_API_URL") || "http://localhost:5000/api";
+const getBrowserHostname = () => {
+  try {
+    return window.location.hostname;
+  } catch {
+    return "";
+  }
+};
+
+const isLocalFrontend = () => {
+  const hostname = getBrowserHostname();
+
+  return (
+    !hostname ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0"
+  );
+};
+
+const getDefaultApiUrl = () => {
+  if (isLocalFrontend()) {
+    return "http://localhost:5000/api";
+  }
+
+  return DEPLOYED_BACKEND_API_URL;
+};
+
+const rawApiUrl = getEnvValue("REACT_APP_API_URL") || getDefaultApiUrl();
 
 export const API_URL = removeTrailingSlash(rawApiUrl);
 export const API_BASE_URL = API_URL.replace(/\/api\/?$/, "");
@@ -36,13 +67,17 @@ export const getGoogleMapsScriptUrl = (libraries = "places") => {
 
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 30000,
 });
 
 api.interceptors.request.use(
   (config) => {
     try {
       const token = localStorage.getItem("token");
-      if (token) config.headers.Authorization = `Bearer ${token}`;
+
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
     } catch {
       // ignore localStorage errors
     }
@@ -51,6 +86,28 @@ api.interceptors.request.use(
   },
   (error) => Promise.reject(error)
 );
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (!error.response) {
+      error.userMessage = `Cannot connect to backend server. Current API URL: ${API_URL}`;
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+export const getApiErrorMessage = (error, fallbackMessage = "Request failed.") => {
+  if (error?.response?.data?.message) return error.response.data.message;
+  if (error?.response?.data?.error) return error.response.data.error;
+  if (error?.userMessage) return error.userMessage;
+  if (error?.message === "Network Error") {
+    return `Network error. Frontend cannot reach backend at ${API_URL}`;
+  }
+
+  return fallbackMessage;
+};
 
 const cleanText = (value) => String(value || "").trim();
 
@@ -257,6 +314,7 @@ export const requestWithFallback = async (requests) => {
       lastError = error;
 
       const status = error.response?.status;
+
       if (status === 404 || status === 405) continue;
 
       throw error;
@@ -555,9 +613,33 @@ const prepareNoticePayload = (data = {}) => {
   };
 };
 
-export const signup = (data) => api.post("/auth/signup", data);
+export const signup = (data) =>
+  requestWithFallback([
+    {
+      method: "post",
+      url: "/auth/signup",
+      data,
+    },
+    {
+      method: "post",
+      url: "/auth/register",
+      data,
+    },
+  ]);
 
-export const login = (data) => api.post("/auth/login", data);
+export const login = (data) =>
+  requestWithFallback([
+    {
+      method: "post",
+      url: "/auth/login",
+      data,
+    },
+    {
+      method: "post",
+      url: "/auth/signin",
+      data,
+    },
+  ]);
 
 export const createUser = (data) =>
   requestWithFallback([
