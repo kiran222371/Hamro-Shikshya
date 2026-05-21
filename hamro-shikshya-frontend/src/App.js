@@ -1,9 +1,11 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import AdminDashboard from "./pages/AdminDashboard";
 import TeacherDashboard from "./pages/TeacherDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
+
 import "./styles/App.css";
 
 function getSavedUser() {
@@ -22,6 +24,16 @@ function getSavedUser() {
   }
 }
 
+function getToken() {
+  const token = localStorage.getItem("token");
+
+  if (!token || token === "undefined" || token === "null") {
+    return null;
+  }
+
+  return token;
+}
+
 function getUserRole(user) {
   return String(user?.role || "").trim().toLowerCase();
 }
@@ -32,14 +44,17 @@ function clearAuthStorage() {
 }
 
 function getDashboardPathByRole(role) {
-  if (role === "admin") return "/admin";
-  if (role === "teacher") return "/teacher";
-  if (role === "student") return "/student";
+  const cleanRole = String(role || "").trim().toLowerCase();
+
+  if (cleanRole === "admin") return "/admin";
+  if (cleanRole === "teacher") return "/teacher";
+  if (cleanRole === "student") return "/student";
+
   return "/login";
 }
 
 function HomeRedirect() {
-  const token = localStorage.getItem("token");
+  const token = getToken();
   const user = getSavedUser();
 
   if (!token || !user) {
@@ -59,7 +74,7 @@ function HomeRedirect() {
 }
 
 function ProtectedRoute({ children, allowedRole }) {
-  const token = localStorage.getItem("token");
+  const token = getToken();
   const user = getSavedUser();
 
   if (!token || !user) {
@@ -82,12 +97,18 @@ function ProtectedRoute({ children, allowedRole }) {
 }
 
 function GuestRoute({ children }) {
-  const token = localStorage.getItem("token");
+  const token = getToken();
   const user = getSavedUser();
 
   if (token && user) {
     const role = getUserRole(user);
-    return <Navigate to={getDashboardPathByRole(role)} replace />;
+    const dashboardPath = getDashboardPathByRole(role);
+
+    if (dashboardPath !== "/login") {
+      return <Navigate to={dashboardPath} replace />;
+    }
+
+    clearAuthStorage();
   }
 
   return children;
@@ -95,7 +116,7 @@ function GuestRoute({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route path="/" element={<HomeRedirect />} />
 
@@ -146,6 +167,6 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
