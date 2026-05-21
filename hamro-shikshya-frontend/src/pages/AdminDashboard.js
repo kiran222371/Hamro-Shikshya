@@ -72,11 +72,8 @@ const getSubjectId = (subject) =>
 const safeReadStorage = (key, fallback) => {
   try {
     if (typeof localStorage === "undefined") return fallback;
-
     const raw = localStorage.getItem(key);
-
     if (!raw) return fallback;
-
     return JSON.parse(raw);
   } catch {
     return fallback;
@@ -86,7 +83,6 @@ const safeReadStorage = (key, fallback) => {
 const safeWriteStorage = (key, value) => {
   try {
     if (typeof localStorage === "undefined") return;
-
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Ignore local storage errors
@@ -277,7 +273,9 @@ const buildGoogleMapsLink = (profile) => {
 
   if (latitude && longitude) {
     const query = encodeURIComponent(`${latitude},${longitude}`);
-    const placeQuery = placeId ? `&query_place_id=${encodeURIComponent(placeId)}` : "";
+    const placeQuery = placeId
+      ? `&query_place_id=${encodeURIComponent(placeId)}`
+      : "";
 
     return `https://www.google.com/maps/search/?api=1&query=${query}${placeQuery}`;
   }
@@ -328,52 +326,6 @@ const loadGooglePlacesScript = () => {
     document.body.appendChild(script);
   });
 };
-
-const getInitials = (name = "") => {
-  const words = String(name).trim().split(/\s+/).filter(Boolean);
-
-  if (words.length === 0) return "HS";
-
-  return words
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase())
-    .join("");
-};
-
-const formatAssignedClasses = (classes = []) => {
-  if (!Array.isArray(classes) || classes.length === 0) {
-    return "No class assigned";
-  }
-
-  return classes
-    .map((item) => `Class ${item.className || "N/A"} Section ${item.section || "N/A"}`)
-    .join(", ");
-};
-
-function StatCard({ label, value, note }) {
-  return (
-    <div className="stat-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {note && <p className="dashboard-muted" style={{ margin: "8px 0 0" }}>{note}</p>}
-    </div>
-  );
-}
-
-function EmptyState({ text }) {
-  return (
-    <div
-      className="list-card"
-      style={{
-        textAlign: "center",
-        color: "#64748b",
-        fontWeight: 700,
-      }}
-    >
-      {text}
-    </div>
-  );
-}
 
 export default function AdminDashboard() {
   const addressInputRef = useRef(null);
@@ -554,7 +506,6 @@ export default function AdminDashboard() {
     } catch (err) {
       console.warn("SUBJECTS BACKEND NOT AVAILABLE:", err);
       const savedSubjects = safeReadStorage(SUBJECTS_STORAGE_KEY, []);
-
       setSubjects(savedSubjects);
     }
   };
@@ -719,9 +670,7 @@ export default function AdminDashboard() {
       if (Array.isArray(user.assignedClasses)) {
         user.assignedClasses.forEach((item) => {
           if (item.className) {
-            classes.add(
-              `Class ${item.className} Section ${item.section || ""}`
-            );
+            classes.add(`Class ${item.className} Section ${item.section || ""}`);
           }
         });
       }
@@ -813,7 +762,6 @@ export default function AdminDashboard() {
 
     students.forEach((student) => {
       const row = ensureClass(student.className, student.section);
-
       row.students += 1;
 
       if (isUserActive(student)) {
@@ -827,7 +775,6 @@ export default function AdminDashboard() {
       if (Array.isArray(teacher.assignedClasses)) {
         teacher.assignedClasses.forEach((item) => {
           const row = ensureClass(item.className, item.section);
-
           row.teachers += 1;
         });
       }
@@ -835,7 +782,6 @@ export default function AdminDashboard() {
 
     subjects.forEach((subject) => {
       const row = ensureClass(subject.className, subject.section || "All");
-
       row.subjects += 1;
     });
 
@@ -1658,9 +1604,6 @@ export default function AdminDashboard() {
       ["Hamro Shikshya Admin Report"],
       ["School", schoolProfile.schoolName || loggedUser.schoolName || "N/A"],
       ["Address", schoolProfile.formattedAddress || schoolProfile.address || "N/A"],
-      ["Google Place ID", schoolProfile.placeId || "N/A"],
-      ["Latitude", schoolProfile.latitude || "N/A"],
-      ["Longitude", schoolProfile.longitude || "N/A"],
       ["Generated At", new Date().toLocaleString()],
       [],
       ["Summary"],
@@ -1735,7 +1678,7 @@ export default function AdminDashboard() {
     const active = isUserActive(user);
 
     return (
-      <div className="inline-actions" style={{ marginTop: 14 }}>
+      <div className="admin-row-actions">
         <button
           className="small-btn add-btn"
           type="button"
@@ -1776,52 +1719,14 @@ export default function AdminDashboard() {
   };
 
   return (
-    <main className="dashboard-page">
-      <section
-        className="dashboard-card dashboard-header"
-        style={{
-          minHeight: 220,
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
-        <div style={{ position: "relative", zIndex: 2 }}>
-          <div
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: 24,
-              background: "#eaf5ff",
-              color: "#0f8cff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 900,
-              fontSize: 24,
-              marginBottom: 18,
-            }}
-          >
-            {schoolProfile.logoUrl ? (
-              <img
-                src={schoolProfile.logoUrl}
-                alt="School logo"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  borderRadius: 24,
-                }}
-              />
-            ) : (
-              getInitials(schoolProfile.schoolName || loggedUser.schoolName)
-            )}
-          </div>
-
+    <main className="dashboard-page admin-dashboard-page">
+      <section className="dashboard-card dashboard-header admin-hero">
+        <div>
+          <span className="admin-top-badge">School Admin Panel</span>
           <h1 className="dashboard-main-title">Admin Dashboard</h1>
 
           <p className="dashboard-muted">
-            Logged in as{" "}
-            <span className="badge badge-info">{loggedUser.name || "Admin"}</span>
+            Logged in as <b>{loggedUser.name || "Admin"}</b>
           </p>
 
           <p className="dashboard-muted">
@@ -1834,71 +1739,82 @@ export default function AdminDashboard() {
           </p>
         </div>
 
-        <div
-          style={{
-            position: "relative",
-            zIndex: 2,
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <button className="secondary-btn" type="button" onClick={fetchUsers}>
-            Refresh
+        <div className="admin-hero-actions">
+          <button className="primary-btn" type="button" onClick={downloadReportsCsv}>
+            Download Report
           </button>
 
-          <button className="logout-btn" type="button" onClick={logout}>
+          <button className="logout-btn" onClick={logout}>
             Logout
           </button>
         </div>
       </section>
 
       {(error || success || loading) && (
-        <section className="dashboard-card">
+        <section className="dashboard-card admin-message-card">
           {error && <div className="error-box">{error}</div>}
           {success && <div className="success-box">{success}</div>}
-          {loading && <p className="dashboard-muted">Loading users...</p>}
+          {loading && <p>Loading users...</p>}
         </section>
       )}
 
-      <section className="dashboard-card">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 16,
-            flexWrap: "wrap",
-            alignItems: "center",
-            marginBottom: 18,
-          }}
-        >
-          <div>
-            <h2 className="card-title" style={{ marginBottom: 6 }}>
-              School Overview
-            </h2>
-            <p className="dashboard-muted" style={{ margin: 0 }}>
-              Manage school profile, teachers, students, subjects and reports.
-            </p>
-          </div>
-
-          <button className="primary-btn" type="button" onClick={downloadReportsCsv}>
-            Download CSV Report
-          </button>
+      <section className="admin-stats-grid">
+        <div className="admin-stat-card blue">
+          <span>Total Users</span>
+          <strong>{reportData.totalUsers}</strong>
+          <p>Teachers, students and admin users</p>
         </div>
 
-        <div className="dashboard-grid">
-          <StatCard label="Total Users" value={reportData.totalUsers} />
-          <StatCard label="Teachers" value={reportData.totalTeachers} />
-          <StatCard label="Students" value={reportData.totalStudents} />
-          <StatCard label="Subjects" value={reportData.totalSubjects} />
-          <StatCard label="Classes / Sections" value={reportData.totalClasses} />
-          <StatCard label="Inactive Users" value={reportData.inactiveUsers} />
+        <div className="admin-stat-card green">
+          <span>Teachers</span>
+          <strong>{reportData.totalTeachers}</strong>
+          <p>Assigned to classes and sections</p>
+        </div>
+
+        <div className="admin-stat-card purple">
+          <span>Students</span>
+          <strong>{reportData.totalStudents}</strong>
+          <p>Registered under your school</p>
+        </div>
+
+        <div className="admin-stat-card orange">
+          <span>Subjects</span>
+          <strong>{reportData.totalSubjects}</strong>
+          <p>Nepal curriculum subject records</p>
         </div>
       </section>
 
-      <section className="dashboard-card">
-        <h2 className="card-title">School Profile</h2>
+      <section className="admin-quick-grid">
+        <div className="admin-quick-card">
+          <h3>School Setup</h3>
+          <p>Manage profile, address, contact and Google location.</p>
+        </div>
+
+        <div className="admin-quick-card">
+          <h3>User Control</h3>
+          <p>Create, edit, deactivate and reset teacher/student accounts.</p>
+        </div>
+
+        <div className="admin-quick-card">
+          <h3>Curriculum</h3>
+          <p>Add subjects for classes 1 to 12 based on Nepal education structure.</p>
+        </div>
+
+        <div className="admin-quick-card">
+          <h3>Reports</h3>
+          <p>Download school, user, class and subject reports as CSV.</p>
+        </div>
+      </section>
+
+      <section className="dashboard-card admin-section-card">
+        <div className="admin-section-title-row">
+          <div>
+            <h2 className="card-title">School Profile</h2>
+            <p className="dashboard-muted">
+              Keep your school details updated for teachers and students.
+            </p>
+          </div>
+        </div>
 
         <form onSubmit={handleSaveSchoolProfile}>
           <div className="form-grid">
@@ -1924,9 +1840,7 @@ export default function AdminDashboard() {
                 value={schoolProfile.address}
                 onChange={handleSchoolProfileChange}
               />
-              {addressStatus && (
-                <small className="dashboard-muted">{addressStatus}</small>
-              )}
+              <small className="dashboard-muted">{addressStatus}</small>
             </div>
 
             <div className="auth-form-group">
@@ -2044,29 +1958,28 @@ export default function AdminDashboard() {
           {(schoolProfile.latitude ||
             schoolProfile.longitude ||
             schoolProfile.placeId) && (
-            <div className="list-card" style={{ marginTop: 16 }}>
+            <div className="admin-location-box">
               <h3>Google Location Details</h3>
 
-              <p>
-                <b>Place ID:</b> {schoolProfile.placeId || "N/A"}
+              <p className="dashboard-muted">
+                Place ID: <b>{schoolProfile.placeId || "N/A"}</b>
               </p>
 
-              <p>
-                <b>Latitude:</b> {schoolProfile.latitude || "N/A"}
+              <p className="dashboard-muted">
+                Latitude: <b>{schoolProfile.latitude || "N/A"}</b>
               </p>
 
-              <p>
-                <b>Longitude:</b> {schoolProfile.longitude || "N/A"}
+              <p className="dashboard-muted">
+                Longitude: <b>{schoolProfile.longitude || "N/A"}</b>
               </p>
 
-              <div className="inline-actions">
+              <div className="admin-row-actions">
                 {googleMapsLink && (
                   <a
                     className="small-btn add-btn"
                     href={googleMapsLink}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ textDecoration: "none" }}
                   >
                     View on Google Maps
                   </a>
@@ -2089,410 +2002,15 @@ export default function AdminDashboard() {
         </form>
       </section>
 
-      {editingUser && (
-        <section className="dashboard-card">
-          <h2 className="card-title">Edit User</h2>
-
-          <form onSubmit={handleUpdateUser}>
-            <div className="form-grid">
-              <div className="auth-form-group">
-                <label>Full Name</label>
-                <input
-                  className="auth-input"
-                  name="name"
-                  placeholder="Enter full name"
-                  value={editForm.name}
-                  onChange={handleEditChange}
-                  required
-                />
-              </div>
-
-              <div className="auth-form-group">
-                <label>Email</label>
-                <input
-                  className="auth-input"
-                  name="email"
-                  type="email"
-                  placeholder="Enter email"
-                  value={editForm.email}
-                  onChange={handleEditChange}
-                  required
-                />
-              </div>
-
-              <div className="auth-form-group">
-                <label>Role</label>
-                <select
-                  className="auth-select"
-                  name="role"
-                  value={editForm.role}
-                  onChange={handleEditRoleChange}
-                >
-                  <option value="teacher">Teacher</option>
-                  <option value="student">Student</option>
-                </select>
-              </div>
-            </div>
-
-            {editForm.role === "student" && (
-              <div className="list-card" style={{ marginTop: 16 }}>
-                <h3>Student Class</h3>
-
-                <div className="form-grid">
-                  <div className="auth-form-group">
-                    <label>Class</label>
-                    <select
-                      className="auth-select"
-                      name="className"
-                      value={editForm.className}
-                      onChange={handleEditChange}
-                      required
-                    >
-                      <option value="">Select class</option>
-                      {NEPAL_CLASSES.map((className) => (
-                        <option key={className} value={className}>
-                          Class {className}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="auth-form-group">
-                    <label>Section</label>
-                    <select
-                      className="auth-select"
-                      name="section"
-                      value={editForm.section}
-                      onChange={handleEditChange}
-                      required
-                    >
-                      <option value="">Select section</option>
-                      {SECTION_OPTIONS.map((section) => (
-                        <option key={section} value={section}>
-                          Section {section}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {editForm.role === "teacher" && (
-              <div className="list-card" style={{ marginTop: 16 }}>
-                <h3>Teacher Assigned Classes</h3>
-
-                {editForm.assignedClasses.map((item, index) => (
-                  <div className="form-grid" key={index}>
-                    <div className="auth-form-group">
-                      <label>Class</label>
-                      <select
-                        className="auth-select"
-                        value={item.className}
-                        onChange={(e) =>
-                          handleEditAssignedClassChange(
-                            index,
-                            "className",
-                            e.target.value
-                          )
-                        }
-                        required
-                      >
-                        <option value="">Select class</option>
-                        {NEPAL_CLASSES.map((className) => (
-                          <option key={className} value={className}>
-                            Class {className}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="auth-form-group">
-                      <label>Section</label>
-                      <select
-                        className="auth-select"
-                        value={item.section}
-                        onChange={(e) =>
-                          handleEditAssignedClassChange(
-                            index,
-                            "section",
-                            e.target.value
-                          )
-                        }
-                        required
-                      >
-                        <option value="">Select section</option>
-                        {SECTION_OPTIONS.map((section) => (
-                          <option key={section} value={section}>
-                            Section {section}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="auth-form-group">
-                      <label>&nbsp;</label>
-                      <button
-                        className="small-btn remove-btn"
-                        type="button"
-                        onClick={() => removeEditTeacherClass(index)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                <button
-                  className="small-btn add-btn"
-                  type="button"
-                  onClick={addEditTeacherClass}
-                >
-                  Add Another Class
-                </button>
-              </div>
-            )}
-
-            <div className="inline-actions">
-              <button className="primary-btn" type="submit" disabled={updating}>
-                {updating ? "Updating..." : "Update User"}
-              </button>
-
-              <button className="logout-btn" type="button" onClick={cancelEdit}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      <section className="dashboard-two-col">
-        <div className="dashboard-card">
-          <h2 className="card-title">Add Teacher / Student</h2>
-
-          <form onSubmit={handleCreateUser}>
-            <div className="form-grid">
-              <div className="auth-form-group">
-                <label>Full Name</label>
-                <input
-                  className="auth-input"
-                  name="name"
-                  placeholder="Enter full name"
-                  value={form.name}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-
-              <div className="auth-form-group">
-                <label>Email</label>
-                <input
-                  className="auth-input"
-                  name="email"
-                  placeholder="Enter email"
-                  type="email"
-                  value={form.email}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-
-              <div className="auth-form-group">
-                <label>Password</label>
-                <input
-                  className="auth-input"
-                  name="password"
-                  type="password"
-                  placeholder="Enter password"
-                  value={form.password}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-
-              <div className="auth-form-group">
-                <label>Role</label>
-                <select
-                  className="auth-select"
-                  name="role"
-                  value={form.role}
-                  onChange={handleRoleChange}
-                >
-                  <option value="teacher">Teacher</option>
-                  <option value="student">Student</option>
-                </select>
-              </div>
-            </div>
-
-            {form.role === "student" && (
-              <div className="list-card" style={{ marginTop: 16 }}>
-                <h3>Student Class</h3>
-
-                <div className="form-grid">
-                  <div className="auth-form-group">
-                    <label>Class</label>
-                    <select
-                      className="auth-select"
-                      name="className"
-                      value={form.className}
-                      onChange={handleChange}
-                      required
-                    >
-                      <option value="">Select class</option>
-                      {NEPAL_CLASSES.map((className) => (
-                        <option key={className} value={className}>
-                          Class {className}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="auth-form-group">
-                    <label>Section</label>
-                    <select
-                      className="auth-select"
-                      name="section"
-                      value={form.section}
-                      onChange={handleChange}
-                      required
-                    >
-                      <option value="">Select section</option>
-                      {SECTION_OPTIONS.map((section) => (
-                        <option key={section} value={section}>
-                          Section {section}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {form.role === "teacher" && (
-              <div className="list-card" style={{ marginTop: 16 }}>
-                <h3>Teacher Classes</h3>
-
-                {form.assignedClasses.map((item, index) => (
-                  <div className="form-grid" key={index}>
-                    <div className="auth-form-group">
-                      <label>Class</label>
-                      <select
-                        className="auth-select"
-                        value={item.className}
-                        onChange={(e) =>
-                          handleAssignedClassChange(
-                            index,
-                            "className",
-                            e.target.value
-                          )
-                        }
-                        required
-                      >
-                        <option value="">Select class</option>
-                        {NEPAL_CLASSES.map((className) => (
-                          <option key={className} value={className}>
-                            Class {className}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="auth-form-group">
-                      <label>Section</label>
-                      <select
-                        className="auth-select"
-                        value={item.section}
-                        onChange={(e) =>
-                          handleAssignedClassChange(
-                            index,
-                            "section",
-                            e.target.value
-                          )
-                        }
-                        required
-                      >
-                        <option value="">Select section</option>
-                        {SECTION_OPTIONS.map((section) => (
-                          <option key={section} value={section}>
-                            Section {section}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="auth-form-group">
-                      <label>&nbsp;</label>
-                      <button
-                        className="small-btn remove-btn"
-                        type="button"
-                        onClick={() => removeTeacherClass(index)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                <button
-                  className="small-btn add-btn"
-                  type="button"
-                  onClick={addTeacherClass}
-                >
-                  Add Another Class
-                </button>
-              </div>
-            )}
-
-            <button className="primary-btn" type="submit" disabled={creating}>
-              {creating ? "Creating..." : "Create User"}
-            </button>
-          </form>
-        </div>
-
-        <div className="dashboard-card">
-          <h2 className="card-title">User Management</h2>
-
-          <div className="form-grid">
-            <input
-              className="auth-input"
-              placeholder="Search by name or email"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-            />
-
-            <select
-              className="auth-select"
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-            >
-              <option value="all">All roles</option>
-              <option value="teacher">Teachers only</option>
-              <option value="student">Students only</option>
-            </select>
-
-            <select
-              className="auth-select"
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-            >
-              <option value="all">All classes</option>
-              {classOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="dashboard-grid" style={{ marginTop: 18 }}>
-            <StatCard label="Shown Teachers" value={filteredTeachers.length} />
-            <StatCard label="Shown Students" value={filteredStudents.length} />
+      <section className="dashboard-card admin-section-card">
+        <div className="admin-section-title-row">
+          <div>
+            <h2 className="card-title">Subject Management</h2>
+            <p className="dashboard-muted">
+              Add school subjects according to Nepal classes, streams and sections.
+            </p>
           </div>
         </div>
-      </section>
-
-      <section className="dashboard-card">
-        <h2 className="card-title">Subject Management</h2>
 
         <form onSubmit={handleSubjectSubmit}>
           <div className="form-grid">
@@ -2595,7 +2113,7 @@ export default function AdminDashboard() {
             Level: <b>{getNepalLevel(subjectForm.className)}</b>
           </p>
 
-          <div className="inline-actions">
+          <div className="admin-row-actions">
             <button className="primary-btn" type="submit" disabled={subjectSaving}>
               {subjectSaving
                 ? "Saving..."
@@ -2625,25 +2143,11 @@ export default function AdminDashboard() {
           </div>
         </form>
 
-        <hr style={{ margin: "24px 0" }} />
+        <hr className="admin-divider" />
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 16,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <h3 style={{ margin: 0 }}>Subjects</h3>
+        <h3>Subjects</h3>
 
-          <span className="badge badge-info">
-            {filteredSubjects.length} subject(s)
-          </span>
-        </div>
-
-        <div className="form-grid" style={{ marginTop: 16 }}>
+        <div className="form-grid">
           <input
             className="auth-input"
             placeholder="Search subject or code"
@@ -2679,36 +2183,24 @@ export default function AdminDashboard() {
         </div>
 
         {filteredSubjects.length === 0 ? (
-          <EmptyState text="No subjects found." />
+          <p>No subjects found.</p>
         ) : (
-          <div className="dashboard-grid" style={{ marginTop: 18 }}>
+          <div className="admin-list-grid">
             {filteredSubjects.map((subject) => (
-              <div className="list-card" key={getSubjectId(subject)}>
+              <article className="admin-user-card" key={getSubjectId(subject)}>
                 <h3>{subject.name}</h3>
-
-                <span className="badge badge-info">
-                  {subject.subjectCode || subject.code || "N/A"}
-                </span>
-
-                <span className="badge">
+                <p>Code: {subject.subjectCode || subject.code || "N/A"}</p>
+                <p>
                   Class {subject.className || "N/A"} Section{" "}
                   {subject.section || "All"}
+                </p>
+                <p>Level: {subject.level || getNepalLevel(subject.className)}</p>
+                <p>Stream: {subject.stream || "General"}</p>
+                <span className="badge badge-info">
+                  {subject.type || "Compulsory"}
                 </span>
 
-                <p>
-                  <b>Level:</b>{" "}
-                  {subject.level || getNepalLevel(subject.className)}
-                </p>
-
-                <p>
-                  <b>Stream:</b> {subject.stream || "General"}
-                </p>
-
-                <p>
-                  <b>Type:</b> {subject.type || "Compulsory"}
-                </p>
-
-                <div className="inline-actions">
+                <div className="admin-row-actions">
                   <button
                     className="small-btn add-btn"
                     type="button"
@@ -2725,36 +2217,49 @@ export default function AdminDashboard() {
                     Delete
                   </button>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
       </section>
 
-      <section className="dashboard-card">
-        <h2 className="card-title">Reports</h2>
+      <section className="dashboard-card admin-section-card">
+        <div className="admin-section-title-row">
+          <div>
+            <h2 className="card-title">Reports</h2>
+            <p className="dashboard-muted">
+              View class-wise summary and export school data.
+            </p>
+          </div>
 
-        <div className="dashboard-grid">
-          <StatCard label="Total Users" value={reportData.totalUsers} />
-          <StatCard label="Teachers" value={reportData.totalTeachers} />
-          <StatCard label="Students" value={reportData.totalStudents} />
-          <StatCard label="Active Users" value={reportData.activeUsers} />
-          <StatCard label="Inactive Users" value={reportData.inactiveUsers} />
-          <StatCard label="Subjects" value={reportData.totalSubjects} />
-        </div>
-
-        <div className="inline-actions" style={{ marginTop: 18 }}>
           <button className="primary-btn" type="button" onClick={downloadReportsCsv}>
             Download CSV Report
           </button>
         </div>
 
-        <hr style={{ margin: "24px 0" }} />
+        <div className="admin-mini-stats">
+          <div>
+            <strong>{reportData.activeUsers}</strong>
+            <span>Active Users</span>
+          </div>
+
+          <div>
+            <strong>{reportData.inactiveUsers}</strong>
+            <span>Inactive Users</span>
+          </div>
+
+          <div>
+            <strong>{reportData.totalClasses}</strong>
+            <span>Classes / Sections</span>
+          </div>
+        </div>
+
+        <hr className="admin-divider" />
 
         <h3>Class Summary Report</h3>
 
         {reportData.classRows.length === 0 ? (
-          <EmptyState text="No class report available yet." />
+          <p>No class report available yet.</p>
         ) : (
           <div className="table-wrap">
             <table className="dashboard-table">
@@ -2788,20 +2293,428 @@ export default function AdminDashboard() {
         )}
       </section>
 
-      <section className="dashboard-two-col">
-        <div className="dashboard-card">
-          <h2 className="card-title">Teachers</h2>
+      {editingUser && (
+        <section className="dashboard-card admin-section-card">
+          <h2 className="card-title">Edit User</h2>
 
-          {loading ? (
-            <p className="dashboard-muted">Loading teachers...</p>
-          ) : filteredTeachers.length === 0 ? (
-            <EmptyState text="No teachers found." />
-          ) : (
-            <div className="dashboard-grid">
-              {filteredTeachers.map((teacher) => (
-                <div className="list-card" key={getId(teacher)}>
+          <form onSubmit={handleUpdateUser}>
+            <div className="form-grid">
+              <div className="auth-form-group">
+                <label>Full Name</label>
+                <input
+                  className="auth-input"
+                  name="name"
+                  placeholder="Enter full name"
+                  value={editForm.name}
+                  onChange={handleEditChange}
+                  required
+                />
+              </div>
+
+              <div className="auth-form-group">
+                <label>Email</label>
+                <input
+                  className="auth-input"
+                  name="email"
+                  type="email"
+                  placeholder="Enter email"
+                  value={editForm.email}
+                  onChange={handleEditChange}
+                  required
+                />
+              </div>
+
+              <div className="auth-form-group">
+                <label>Role</label>
+                <select
+                  className="auth-select"
+                  name="role"
+                  value={editForm.role}
+                  onChange={handleEditRoleChange}
+                >
+                  <option value="teacher">Teacher</option>
+                  <option value="student">Student</option>
+                </select>
+              </div>
+            </div>
+
+            {editForm.role === "student" && (
+              <div className="admin-inner-box">
+                <h3>Student Class</h3>
+
+                <div className="form-grid">
+                  <div className="auth-form-group">
+                    <label>Class</label>
+                    <select
+                      className="auth-select"
+                      name="className"
+                      value={editForm.className}
+                      onChange={handleEditChange}
+                      required
+                    >
+                      <option value="">Select class</option>
+                      {NEPAL_CLASSES.map((className) => (
+                        <option key={className} value={className}>
+                          Class {className}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="auth-form-group">
+                    <label>Section</label>
+                    <select
+                      className="auth-select"
+                      name="section"
+                      value={editForm.section}
+                      onChange={handleEditChange}
+                      required
+                    >
+                      <option value="">Select section</option>
+                      {SECTION_OPTIONS.map((section) => (
+                        <option key={section} value={section}>
+                          Section {section}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {editForm.role === "teacher" && (
+              <div className="admin-inner-box">
+                <h3>Teacher Assigned Classes</h3>
+
+                {editForm.assignedClasses.map((item, index) => (
+                  <div className="form-grid" key={index}>
+                    <div className="auth-form-group">
+                      <label>Class</label>
+                      <select
+                        className="auth-select"
+                        value={item.className}
+                        onChange={(e) =>
+                          handleEditAssignedClassChange(
+                            index,
+                            "className",
+                            e.target.value
+                          )
+                        }
+                        required
+                      >
+                        <option value="">Select class</option>
+                        {NEPAL_CLASSES.map((className) => (
+                          <option key={className} value={className}>
+                            Class {className}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="auth-form-group">
+                      <label>Section</label>
+                      <select
+                        className="auth-select"
+                        value={item.section}
+                        onChange={(e) =>
+                          handleEditAssignedClassChange(
+                            index,
+                            "section",
+                            e.target.value
+                          )
+                        }
+                        required
+                      >
+                        <option value="">Select section</option>
+                        {SECTION_OPTIONS.map((section) => (
+                          <option key={section} value={section}>
+                            Section {section}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="auth-form-group">
+                      <label>&nbsp;</label>
+                      <button
+                        className="small-btn remove-btn"
+                        type="button"
+                        onClick={() => removeEditTeacherClass(index)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  className="small-btn add-btn"
+                  type="button"
+                  onClick={addEditTeacherClass}
+                >
+                  Add Another Class
+                </button>
+              </div>
+            )}
+
+            <div className="admin-row-actions">
+              <button className="primary-btn" type="submit" disabled={updating}>
+                {updating ? "Updating..." : "Update User"}
+              </button>
+
+              <button className="logout-btn" type="button" onClick={cancelEdit}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      <section className="dashboard-card admin-section-card">
+        <div className="admin-section-title-row">
+          <div>
+            <h2 className="card-title">Add Teacher / Student</h2>
+            <p className="dashboard-muted">
+              Create login accounts for teachers and students.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleCreateUser}>
+          <div className="form-grid">
+            <div className="auth-form-group">
+              <label>Full Name</label>
+              <input
+                className="auth-input"
+                name="name"
+                placeholder="Enter full name"
+                value={form.name}
+                onChange={handleChange}
+                required
+              />
+            </div>
+
+            <div className="auth-form-group">
+              <label>Email</label>
+              <input
+                className="auth-input"
+                name="email"
+                placeholder="Enter email"
+                type="email"
+                value={form.email}
+                onChange={handleChange}
+                required
+              />
+            </div>
+
+            <div className="auth-form-group">
+              <label>Password</label>
+              <input
+                className="auth-input"
+                name="password"
+                type="password"
+                placeholder="Enter password"
+                value={form.password}
+                onChange={handleChange}
+                required
+              />
+            </div>
+
+            <div className="auth-form-group">
+              <label>Role</label>
+              <select
+                className="auth-select"
+                name="role"
+                value={form.role}
+                onChange={handleRoleChange}
+              >
+                <option value="teacher">Teacher</option>
+                <option value="student">Student</option>
+              </select>
+            </div>
+          </div>
+
+          {form.role === "student" && (
+            <div className="admin-inner-box">
+              <h3>Student Class</h3>
+
+              <div className="form-grid">
+                <div className="auth-form-group">
+                  <label>Class</label>
+                  <select
+                    className="auth-select"
+                    name="className"
+                    value={form.className}
+                    onChange={handleChange}
+                    required
+                  >
+                    <option value="">Select class</option>
+                    {NEPAL_CLASSES.map((className) => (
+                      <option key={className} value={className}>
+                        Class {className}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="auth-form-group">
+                  <label>Section</label>
+                  <select
+                    className="auth-select"
+                    name="section"
+                    value={form.section}
+                    onChange={handleChange}
+                    required
+                  >
+                    <option value="">Select section</option>
+                    {SECTION_OPTIONS.map((section) => (
+                      <option key={section} value={section}>
+                        Section {section}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {form.role === "teacher" && (
+            <div className="admin-inner-box">
+              <h3>Teacher Classes</h3>
+
+              {form.assignedClasses.map((item, index) => (
+                <div className="form-grid" key={index}>
+                  <div className="auth-form-group">
+                    <label>Class</label>
+                    <select
+                      className="auth-select"
+                      value={item.className}
+                      onChange={(e) =>
+                        handleAssignedClassChange(
+                          index,
+                          "className",
+                          e.target.value
+                        )
+                      }
+                      required
+                    >
+                      <option value="">Select class</option>
+                      {NEPAL_CLASSES.map((className) => (
+                        <option key={className} value={className}>
+                          Class {className}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="auth-form-group">
+                    <label>Section</label>
+                    <select
+                      className="auth-select"
+                      value={item.section}
+                      onChange={(e) =>
+                        handleAssignedClassChange(
+                          index,
+                          "section",
+                          e.target.value
+                        )
+                      }
+                      required
+                    >
+                      <option value="">Select section</option>
+                      {SECTION_OPTIONS.map((section) => (
+                        <option key={section} value={section}>
+                          Section {section}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="auth-form-group">
+                    <label>&nbsp;</label>
+                    <button
+                      className="small-btn remove-btn"
+                      type="button"
+                      onClick={() => removeTeacherClass(index)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              <button
+                className="small-btn add-btn"
+                type="button"
+                onClick={addTeacherClass}
+              >
+                Add Another Class
+              </button>
+            </div>
+          )}
+
+          <button className="primary-btn" type="submit" disabled={creating}>
+            {creating ? "Creating..." : "Create User"}
+          </button>
+        </form>
+      </section>
+
+      <section className="dashboard-card admin-section-card">
+        <div className="admin-section-title-row">
+          <div>
+            <h2 className="card-title">User Management</h2>
+            <p className="dashboard-muted">
+              Search, filter and manage teacher/student accounts.
+            </p>
+          </div>
+        </div>
+
+        <div className="form-grid">
+          <input
+            className="auth-input"
+            placeholder="Search by name or email"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+          />
+
+          <select
+            className="auth-select"
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+          >
+            <option value="all">All roles</option>
+            <option value="teacher">Teachers only</option>
+            <option value="student">Students only</option>
+          </select>
+
+          <select
+            className="auth-select"
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+          >
+            <option value="all">All classes</option>
+            {classOptions.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+
+      <section className="dashboard-card admin-section-card">
+        <h2 className="card-title">Teachers</h2>
+
+        {loading ? (
+          <p>Loading teachers...</p>
+        ) : filteredTeachers.length === 0 ? (
+          <p>No teachers found.</p>
+        ) : (
+          <div className="admin-list-grid">
+            {filteredTeachers.map((teacher) => (
+              <article className="admin-user-card" key={getId(teacher)}>
+                <div className="admin-user-card-top">
                   <h3>{teacher.name}</h3>
-
                   <span
                     className={
                       isUserActive(teacher)
@@ -2811,35 +2724,44 @@ export default function AdminDashboard() {
                   >
                     {isUserActive(teacher) ? "Active" : "Inactive"}
                   </span>
-
-                  <span className="badge badge-info">Teacher</span>
-
-                  <p>{teacher.email}</p>
-
-                  <p>
-                    <b>Classes:</b> {formatAssignedClasses(teacher.assignedClasses)}
-                  </p>
-
-                  {renderUserActions(teacher)}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
 
-        <div className="dashboard-card">
-          <h2 className="card-title">Students</h2>
+                <p>{teacher.email}</p>
+                <p>
+                  <b>Role:</b> Teacher
+                </p>
+                <p>
+                  <b>Classes:</b>{" "}
+                  {teacher.assignedClasses?.length > 0
+                    ? teacher.assignedClasses
+                        .map(
+                          (item) =>
+                            `Class ${item.className} Section ${item.section}`
+                        )
+                        .join(", ")
+                    : "No class assigned"}
+                </p>
 
-          {loading ? (
-            <p className="dashboard-muted">Loading students...</p>
-          ) : filteredStudents.length === 0 ? (
-            <EmptyState text="No students found." />
-          ) : (
-            <div className="dashboard-grid">
-              {filteredStudents.map((student) => (
-                <div className="list-card" key={getId(student)}>
+                {renderUserActions(teacher)}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="dashboard-card admin-section-card">
+        <h2 className="card-title">Students</h2>
+
+        {loading ? (
+          <p>Loading students...</p>
+        ) : filteredStudents.length === 0 ? (
+          <p>No students found.</p>
+        ) : (
+          <div className="admin-list-grid">
+            {filteredStudents.map((student) => (
+              <article className="admin-user-card" key={getId(student)}>
+                <div className="admin-user-card-top">
                   <h3>{student.name}</h3>
-
                   <span
                     className={
                       isUserActive(student)
@@ -2849,22 +2771,22 @@ export default function AdminDashboard() {
                   >
                     {isUserActive(student) ? "Active" : "Inactive"}
                   </span>
-
-                  <span className="badge badge-info">Student</span>
-
-                  <p>{student.email}</p>
-
-                  <p>
-                    <b>Class:</b> Class {student.className || "N/A"} Section{" "}
-                    {student.section || "N/A"}
-                  </p>
-
-                  {renderUserActions(student)}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+
+                <p>{student.email}</p>
+                <p>
+                  <b>Role:</b> Student
+                </p>
+                <p>
+                  <b>Class:</b> Class {student.className || "N/A"} Section{" "}
+                  {student.section || "N/A"}
+                </p>
+
+                {renderUserActions(student)}
+              </article>
+            ))}
+          </div>
+        )}
       </section>
     </main>
   );
