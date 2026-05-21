@@ -14,17 +14,44 @@ import {
 
 const emptyArray = [];
 
+const WEEK_ORDER = {
+  sunday: 1,
+  monday: 2,
+  tuesday: 3,
+  wednesday: 4,
+  thursday: 5,
+  friday: 6,
+  saturday: 7,
+};
+
 const readLoggedUser = () => {
   try {
     const savedUser = localStorage.getItem("user");
-    return savedUser ? JSON.parse(savedUser) : {};
+
+    if (!savedUser || savedUser === "undefined" || savedUser === "null") {
+      return {};
+    }
+
+    return JSON.parse(savedUser);
   } catch {
     return {};
   }
 };
 
 const getRecordId = (item, fallback = "") => {
-  return String(item?._id || item?.id || item?.taskId || item?.homeworkId || fallback);
+  return String(
+    item?._id ||
+      item?.id ||
+      item?.taskId ||
+      item?.homeworkId ||
+      item?.examId ||
+      item?.noticeId ||
+      fallback
+  );
+};
+
+const hasValue = (value) => {
+  return value !== undefined && value !== null && String(value).trim() !== "";
 };
 
 const toArray = (res) => {
@@ -33,6 +60,7 @@ const toArray = (res) => {
   if (Array.isArray(body)) return body;
   if (Array.isArray(body?.data)) return body.data;
   if (Array.isArray(body?.tasks)) return body.tasks;
+  if (Array.isArray(body?.task)) return body.task;
   if (Array.isArray(body?.homework)) return body.homework;
   if (Array.isArray(body?.homeworks)) return body.homeworks;
   if (Array.isArray(body?.submissions)) return body.submissions;
@@ -189,6 +217,166 @@ const sortByDateDesc = (items, dateKeys = ["createdAt", "date"]) => {
   });
 };
 
+const getExamDateValue = (exam) => {
+  return exam?.date || exam?.examDate || exam?.startDate || exam?.createdAt || "";
+};
+
+const getRoutineDayNumber = (item) => {
+  const day = String(item?.day || item?.weekDay || "").trim().toLowerCase();
+  return WEEK_ORDER[day] || 99;
+};
+
+function EmptyState({ title, text }) {
+  return (
+    <div
+      style={{
+        background: "#f8fbff",
+        border: "1px dashed #cfe0f3",
+        borderRadius: 18,
+        padding: 22,
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: 34, marginBottom: 8 }}>📭</div>
+      <h3 style={{ margin: "0 0 8px", fontSize: 20 }}>{title}</h3>
+      <p className="dashboard-muted" style={{ margin: 0 }}>
+        {text}
+      </p>
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, subText, tone = "blue" }) {
+  const toneMap = {
+    blue: {
+      bg: "linear-gradient(135deg, #eaf5ff, #ffffff)",
+      color: "#0f8cff",
+      border: "#cfe8ff",
+    },
+    green: {
+      bg: "linear-gradient(135deg, #ecfdf5, #ffffff)",
+      color: "#047857",
+      border: "#bbf7d0",
+    },
+    yellow: {
+      bg: "linear-gradient(135deg, #fffbeb, #ffffff)",
+      color: "#92400e",
+      border: "#fde68a",
+    },
+    red: {
+      bg: "linear-gradient(135deg, #fff1f2, #ffffff)",
+      color: "#be123c",
+      border: "#fecdd3",
+    },
+    purple: {
+      bg: "linear-gradient(135deg, #f5f3ff, #ffffff)",
+      color: "#6d28d9",
+      border: "#ddd6fe",
+    },
+  };
+
+  const selectedTone = toneMap[tone] || toneMap.blue;
+
+  return (
+    <div
+      style={{
+        background: selectedTone.bg,
+        border: `1px solid ${selectedTone.border}`,
+        borderRadius: 22,
+        padding: 20,
+        boxShadow: "0 12px 28px rgba(15, 23, 42, 0.07)",
+      }}
+    >
+      <div
+        style={{
+          width: 46,
+          height: 46,
+          borderRadius: 16,
+          background: "#ffffff",
+          color: selectedTone.color,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 24,
+          marginBottom: 14,
+          boxShadow: "0 8px 18px rgba(15, 23, 42, 0.06)",
+        }}
+      >
+        {icon}
+      </div>
+
+      <span className="dashboard-muted" style={{ fontWeight: 800 }}>
+        {label}
+      </span>
+
+      <strong
+        style={{
+          display: "block",
+          marginTop: 8,
+          fontSize: 34,
+          lineHeight: 1,
+          color: "#0f172a",
+        }}
+      >
+        {value}
+      </strong>
+
+      {subText && (
+        <p className="dashboard-muted" style={{ margin: "10px 0 0" }}>
+          {subText}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ children, type = "info" }) {
+  const styleMap = {
+    info: {
+      background: "#e0f2fe",
+      color: "#075985",
+    },
+    success: {
+      background: "#dcfce7",
+      color: "#166534",
+    },
+    warning: {
+      background: "#fef3c7",
+      color: "#92400e",
+    },
+    danger: {
+      background: "#fee2e2",
+      color: "#991b1b",
+    },
+    purple: {
+      background: "#ede9fe",
+      color: "#5b21b6",
+    },
+  };
+
+  const selected = styleMap[type] || styleMap.info;
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "6px 11px",
+        borderRadius: 999,
+        background: selected.background,
+        color: selected.color,
+        fontSize: 12,
+        fontWeight: 900,
+        marginRight: 8,
+        marginBottom: 8,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 export default function StudentDashboard() {
   const [tasks, setTasks] = useState(emptyArray);
   const [submissions, setSubmissions] = useState(emptyArray);
@@ -223,7 +411,12 @@ export default function StudentDashboard() {
 
   const className = String(loggedUser.className || loggedUser.class || "").trim();
   const section = String(loggedUser.section || "").trim();
-  const schoolId = String(loggedUser.schoolId || loggedUser.school?._id || "").trim();
+
+  const schoolId = String(
+    loggedUser.schoolId || loggedUser.school?._id || ""
+  ).trim();
+
+  const studentInitial = studentName ? studentName.charAt(0).toUpperCase() : "S";
 
   const getMySubmission = (task) => {
     const taskId = String(task?._id || task?.id || "");
@@ -299,11 +492,27 @@ export default function StudentDashboard() {
     });
   }, [tasks]);
 
+  const pendingTasks = useMemo(() => {
+    return sortedTasks
+      .filter((task) => !getMySubmission(task))
+      .slice(0, 3);
+  }, [sortedTasks, submissions]);
+
+  const upcomingExams = useMemo(() => {
+    return [...exams].sort((a, b) => {
+      const aTime = new Date(getExamDateValue(a) || 0).getTime();
+      const bTime = new Date(getExamDateValue(b) || 0).getTime();
+
+      return aTime - bTime;
+    });
+  }, [exams]);
+
   const recentAttendance = useMemo(() => {
-    return sortByDateDesc(attendance, ["date", "attendanceDate", "createdAt"]).slice(
-      0,
-      8
-    );
+    return sortByDateDesc(attendance, [
+      "date",
+      "attendanceDate",
+      "createdAt",
+    ]).slice(0, 8);
   }, [attendance]);
 
   const recentResults = useMemo(() => {
@@ -313,6 +522,20 @@ export default function StudentDashboard() {
   const recentNotices = useMemo(() => {
     return sortByDateDesc(notices, ["createdAt", "date"]).slice(0, 8);
   }, [notices]);
+
+  const sortedTimetable = useMemo(() => {
+    return [...timetable].sort((a, b) => {
+      const dayDiff = getRoutineDayNumber(a) - getRoutineDayNumber(b);
+
+      if (dayDiff !== 0) return dayDiff;
+
+      return String(a?.startTime || a?.time || "").localeCompare(
+        String(b?.startTime || b?.time || "")
+      );
+    });
+  }, [timetable]);
+
+  const nextExam = upcomingExams[0] || null;
 
   const fetchStudentData = async () => {
     try {
@@ -345,19 +568,25 @@ export default function StudentDashboard() {
       ]);
 
       setTasks(requests[0].status === "fulfilled" ? toArray(requests[0].value) : []);
+
       setSubmissions(
         requests[1].status === "fulfilled" ? toArray(requests[1].value) : []
       );
+
       setExams(requests[2].status === "fulfilled" ? toArray(requests[2].value) : []);
+
       setNotices(
         requests[3].status === "fulfilled" ? toArray(requests[3].value) : []
       );
+
       setAttendance(
         requests[4].status === "fulfilled" ? toArray(requests[4].value) : []
       );
+
       setResults(
         requests[5].status === "fulfilled" ? toArray(requests[5].value) : []
       );
+
       setTimetable(
         requests[6].status === "fulfilled" ? toArray(requests[6].value) : []
       );
@@ -456,204 +685,376 @@ export default function StudentDashboard() {
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    window.location.href = "/#/login";
+    window.location.replace("/login");
   };
 
   const styles = {
-    grid: {
+    hero: {
+      background:
+        "radial-gradient(circle at top right, rgba(255,255,255,0.22), transparent 30%), linear-gradient(135deg, #0f8cff 0%, #48b8f6 100%)",
+      color: "#ffffff",
+      borderRadius: 28,
+      padding: 28,
+      marginBottom: 24,
+      boxShadow: "0 22px 55px rgba(15, 140, 255, 0.22)",
       display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-      gap: "16px",
+      gridTemplateColumns: "1.4fr 0.8fr",
+      gap: 22,
+      alignItems: "center",
     },
-    statCard: {
+    avatar: {
+      width: 74,
+      height: 74,
+      borderRadius: 24,
+      background: "rgba(255,255,255,0.2)",
+      border: "1px solid rgba(255,255,255,0.32)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 34,
+      fontWeight: 900,
+      boxShadow: "0 12px 26px rgba(15, 23, 42, 0.12)",
+    },
+    heroTitle: {
+      fontSize: "clamp(32px, 5vw, 54px)",
+      lineHeight: 1.05,
+      margin: "14px 0 12px",
+      letterSpacing: "-1.2px",
+      fontWeight: 950,
+    },
+    heroText: {
+      margin: 0,
+      color: "rgba(255,255,255,0.92)",
+      fontSize: 17,
+      lineHeight: 1.55,
+    },
+    heroPanel: {
+      background: "rgba(255,255,255,0.16)",
+      border: "1px solid rgba(255,255,255,0.25)",
+      borderRadius: 24,
+      padding: 20,
+      backdropFilter: "blur(12px)",
+    },
+    heroMetric: {
+      background: "rgba(255,255,255,0.17)",
+      borderRadius: 18,
+      padding: 16,
+      marginBottom: 12,
+    },
+    quickLinks: {
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap",
+      marginTop: 18,
+    },
+    quickLink: {
       background: "#ffffff",
-      border: "1px solid #e5e7eb",
-      borderRadius: "16px",
-      padding: "16px",
-      boxShadow: "0 6px 18px rgba(15, 23, 42, 0.06)",
+      color: "#0f8cff",
+      borderRadius: 999,
+      padding: "10px 14px",
+      fontWeight: 900,
+      fontSize: 14,
+      textDecoration: "none",
+      boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)",
     },
-    statNumber: {
-      fontSize: "28px",
-      fontWeight: "800",
-      margin: "8px 0 0",
-      color: "#0f172a",
+    actionRow: {
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap",
+      marginTop: 18,
     },
-    sectionGrid: {
+    statsGrid: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(175px, 1fr))",
+      gap: 16,
+      marginBottom: 24,
+    },
+    twoColumn: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-      gap: "18px",
+      gap: 18,
       alignItems: "start",
-    },
-    smallBadge: {
-      display: "inline-flex",
-      alignItems: "center",
-      padding: "5px 10px",
-      borderRadius: "999px",
-      background: "#eef2ff",
-      color: "#3730a3",
-      fontSize: "12px",
-      fontWeight: "700",
-      marginRight: "8px",
-      marginBottom: "8px",
-    },
-    dangerBadge: {
-      display: "inline-flex",
-      alignItems: "center",
-      padding: "5px 10px",
-      borderRadius: "999px",
-      background: "#fee2e2",
-      color: "#991b1b",
-      fontSize: "12px",
-      fontWeight: "700",
-      marginRight: "8px",
-      marginBottom: "8px",
-    },
-    successBadge: {
-      display: "inline-flex",
-      alignItems: "center",
-      padding: "5px 10px",
-      borderRadius: "999px",
-      background: "#dcfce7",
-      color: "#166534",
-      fontSize: "12px",
-      fontWeight: "700",
-      marginRight: "8px",
-      marginBottom: "8px",
     },
     buttonRow: {
       display: "flex",
-      gap: "10px",
+      gap: 10,
       flexWrap: "wrap",
-      marginTop: "10px",
+      marginTop: 12,
+    },
+    profileRow: {
+      display: "grid",
+      gridTemplateColumns: "120px 1fr",
+      gap: 10,
+      padding: "12px 0",
+      borderBottom: "1px solid #edf2f7",
+    },
+    progressTrack: {
+      width: "100%",
+      height: 12,
+      borderRadius: 999,
+      background: "#e5e7eb",
+      overflow: "hidden",
+      marginTop: 12,
+    },
+    progressBar: {
+      height: "100%",
+      borderRadius: 999,
+      background: "linear-gradient(90deg, #0f8cff, #48b8f6)",
+      width: `${attendanceSummary.percentage}%`,
     },
   };
 
   return (
     <main className="dashboard-page">
-      <section className="dashboard-card dashboard-header">
+      <section style={styles.hero}>
         <div>
-          <h1 className="dashboard-main-title">Student Dashboard</h1>
+          <div style={styles.avatar}>{studentInitial}</div>
 
-          <p className="dashboard-muted">
-            Welcome back, <b>{studentName}</b>
+          <h1 style={styles.heroTitle}>Welcome back, {studentName}</h1>
+
+          <p style={styles.heroText}>
+            This is your learning space. Check homework, notices, exams,
+            attendance, results, and timetable from one simple dashboard.
           </p>
 
-          <p className="dashboard-muted">
-            Class: <b>{className || "Missing"}</b>{" "}
-            Section: <b>{section || "Missing"}</b>
-          </p>
+          <div style={styles.quickLinks}>
+            <a style={styles.quickLink} href="#homework">
+              Homework
+            </a>
+            <a style={styles.quickLink} href="#notices">
+              Notices
+            </a>
+            <a style={styles.quickLink} href="#exams">
+              Exams
+            </a>
+            <a style={styles.quickLink} href="#results">
+              Results
+            </a>
+            <a style={styles.quickLink} href="#attendance">
+              Attendance
+            </a>
+            <a style={styles.quickLink} href="#timetable">
+              Timetable
+            </a>
+          </div>
+
+          <div style={styles.actionRow}>
+            <button className="primary-btn" type="button" onClick={fetchStudentData}>
+              Refresh Dashboard
+            </button>
+
+            <button className="logout-btn" type="button" onClick={logout}>
+              Logout
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-          <button className="primary-btn" onClick={fetchStudentData}>
-            Refresh
-          </button>
+        <aside style={styles.heroPanel}>
+          <div style={styles.heroMetric}>
+            <p style={{ margin: "0 0 6px", opacity: 0.9 }}>Class</p>
+            <h2 style={{ margin: 0, fontSize: 28 }}>
+              {className || "Missing"} {section ? `- ${section}` : ""}
+            </h2>
+          </div>
 
-          <button className="logout-btn" onClick={logout}>
-            Logout
-          </button>
-        </div>
+          <div style={styles.heroMetric}>
+            <p style={{ margin: "0 0 6px", opacity: 0.9 }}>Attendance</p>
+            <h2 style={{ margin: 0, fontSize: 28 }}>
+              {attendanceSummary.percentage}%
+            </h2>
+          </div>
+
+          <div style={{ ...styles.heroMetric, marginBottom: 0 }}>
+            <p style={{ margin: "0 0 6px", opacity: 0.9 }}>Pending Homework</p>
+            <h2 style={{ margin: 0, fontSize: 28 }}>{homeworkSummary.pending}</h2>
+          </div>
+        </aside>
       </section>
 
       {(loading || message || error) && (
         <section className="dashboard-card">
           {loading && <p>Loading student dashboard data...</p>}
-
           {message && <div className="success-box">{message}</div>}
-
           {error && <div className="error-box">{error}</div>}
         </section>
       )}
 
-      <section style={styles.grid}>
-        <div style={styles.statCard}>
-          <span className="dashboard-muted">Total Homework</span>
-          <p style={styles.statNumber}>{homeworkSummary.total}</p>
-        </div>
+      <section style={styles.statsGrid}>
+        <StatCard
+          icon="📚"
+          label="Total Homework"
+          value={homeworkSummary.total}
+          subText="Assigned to your class"
+          tone="blue"
+        />
 
-        <div style={styles.statCard}>
-          <span className="dashboard-muted">Submitted</span>
-          <p style={styles.statNumber}>{homeworkSummary.submitted}</p>
-        </div>
+        <StatCard
+          icon="✅"
+          label="Submitted"
+          value={homeworkSummary.submitted}
+          subText="Completed tasks"
+          tone="green"
+        />
 
-        <div style={styles.statCard}>
-          <span className="dashboard-muted">Pending</span>
-          <p style={styles.statNumber}>{homeworkSummary.pending}</p>
-        </div>
+        <StatCard
+          icon="⏳"
+          label="Pending"
+          value={homeworkSummary.pending}
+          subText={`${homeworkSummary.late} late task(s)`}
+          tone={homeworkSummary.late > 0 ? "red" : "yellow"}
+        />
 
-        <div style={styles.statCard}>
-          <span className="dashboard-muted">Attendance</span>
-          <p style={styles.statNumber}>{attendanceSummary.percentage}%</p>
-        </div>
+        <StatCard
+          icon="📅"
+          label="Attendance"
+          value={`${attendanceSummary.percentage}%`}
+          subText={`${attendanceSummary.present} present records`}
+          tone="purple"
+        />
 
-        <div style={styles.statCard}>
-          <span className="dashboard-muted">Notices</span>
-          <p style={styles.statNumber}>{notices.length}</p>
-        </div>
+        <StatCard
+          icon="📢"
+          label="Notices"
+          value={notices.length}
+          subText="Class announcements"
+          tone="blue"
+        />
 
-        <div style={styles.statCard}>
-          <span className="dashboard-muted">Results</span>
-          <p style={styles.statNumber}>{results.length}</p>
-        </div>
+        <StatCard
+          icon="🏆"
+          label="Results"
+          value={results.length}
+          subText="Published result records"
+          tone="green"
+        />
       </section>
 
-      <section style={styles.sectionGrid}>
+      <section style={styles.twoColumn}>
         <section className="dashboard-card">
           <h2 className="card-title">My Profile</h2>
 
-          <p>
-            <b>Name:</b> {studentName}
-          </p>
+          <div style={styles.profileRow}>
+            <b>Name</b>
+            <span>{studentName}</span>
+          </div>
 
-          <p>
-            <b>Email:</b> {loggedUser.email || "N/A"}
-          </p>
+          <div style={styles.profileRow}>
+            <b>Email</b>
+            <span>{loggedUser.email || "N/A"}</span>
+          </div>
 
-          <p>
-            <b>Class:</b> {className || "N/A"}
-          </p>
+          <div style={styles.profileRow}>
+            <b>Class</b>
+            <span>{className || "N/A"}</span>
+          </div>
 
-          <p>
-            <b>Section:</b> {section || "N/A"}
-          </p>
+          <div style={styles.profileRow}>
+            <b>Section</b>
+            <span>{section || "N/A"}</span>
+          </div>
 
-          <p>
-            <b>Role:</b> Student
-          </p>
+          <div style={{ ...styles.profileRow, borderBottom: "none" }}>
+            <b>Role</b>
+            <span>Student</span>
+          </div>
         </section>
 
         <section className="dashboard-card">
-          <h2 className="card-title">Attendance Summary</h2>
+          <h2 className="card-title">Today / Priority</h2>
 
-          <p>
-            <b>Attendance Percentage:</b> {attendanceSummary.percentage}%
-          </p>
+          {pendingTasks.length === 0 && !nextExam ? (
+            <EmptyState
+              title="No urgent item"
+              text="You do not have any pending homework or upcoming exam right now."
+            />
+          ) : (
+            <>
+              {pendingTasks.length > 0 && (
+                <div>
+                  <h3 style={{ marginTop: 0 }}>Pending Homework</h3>
 
-          <p>
-            <b>Total Records:</b> {attendanceSummary.total}
-          </p>
+                  {pendingTasks.map((task, index) => (
+                    <div className="list-card" key={getRecordId(task, index)}>
+                      <h3>{task.title || task.taskTitle || "Homework"}</h3>
 
-          <p>
-            <b>Present:</b> {attendanceSummary.present}
-          </p>
+                      <p>
+                        <b>Subject:</b>{" "}
+                        {task.subject || task.subjectName || "N/A"}
+                      </p>
 
-          <p>
-            <b>Late:</b> {attendanceSummary.late}
-          </p>
+                      <p>
+                        <b>Due:</b>{" "}
+                        {formatDate(task.dueDate || task.deadline)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-          <p>
-            <b>Absent:</b> {attendanceSummary.absent}
-          </p>
+              {nextExam && (
+                <div className="file-box">
+                  <h3 style={{ marginTop: 0 }}>Next Exam</h3>
+
+                  <p>
+                    <b>
+                      {nextExam.title ||
+                        nextExam.examTitle ||
+                        nextExam.name ||
+                        "Exam"}
+                    </b>
+                  </p>
+
+                  <p>
+                    <b>Subject:</b> {nextExam.subject || "N/A"}
+                  </p>
+
+                  <p>
+                    <b>Date:</b> {formatDate(getExamDateValue(nextExam))}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
         </section>
       </section>
 
-      <section className="dashboard-card">
-        <h2 className="card-title">Homework / Tasks</h2>
+      <section
+        id="homework"
+        className="dashboard-card"
+        style={{ marginTop: 24 }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2 className="card-title">Homework / Tasks</h2>
+            <p className="dashboard-muted" style={{ marginTop: -8 }}>
+              Submit your homework answers and attached files here.
+            </p>
+          </div>
+
+          <div>
+            <StatusBadge type="success">
+              Submitted: {homeworkSummary.submitted}
+            </StatusBadge>
+            <StatusBadge type="warning">Pending: {homeworkSummary.pending}</StatusBadge>
+            {homeworkSummary.late > 0 && (
+              <StatusBadge type="danger">Late: {homeworkSummary.late}</StatusBadge>
+            )}
+          </div>
+        </div>
 
         {!loading && !error && sortedTasks.length === 0 && (
-          <p>No homework or tasks found for your class.</p>
+          <EmptyState
+            title="No homework found"
+            text="No homework or tasks have been assigned to your class yet."
+          />
         )}
 
         {!loading &&
@@ -680,7 +1081,7 @@ export default function StudentDashboard() {
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
-                    gap: "12px",
+                    gap: 12,
                     flexWrap: "wrap",
                   }}
                 >
@@ -689,23 +1090,34 @@ export default function StudentDashboard() {
 
                     <div>
                       {submitted ? (
-                        <span style={styles.successBadge}>Submitted</span>
+                        <StatusBadge type="success">Submitted</StatusBadge>
                       ) : late ? (
-                        <span style={styles.dangerBadge}>Late</span>
+                        <StatusBadge type="danger">Late</StatusBadge>
                       ) : (
-                        <span style={styles.smallBadge}>Pending</span>
+                        <StatusBadge type="warning">Pending</StatusBadge>
                       )}
 
                       {(task.subject || task.subjectName) && (
-                        <span style={styles.smallBadge}>
+                        <StatusBadge type="purple">
                           {task.subject || task.subjectName}
-                        </span>
+                        </StatusBadge>
                       )}
                     </div>
                   </div>
 
-                  <div>
-                    <b>Due:</b> {formatDate(dueDate)}
+                  <div
+                    style={{
+                      background: "#f8fbff",
+                      border: "1px solid #e4edf7",
+                      borderRadius: 14,
+                      padding: "10px 14px",
+                      minWidth: 130,
+                      textAlign: "center",
+                    }}
+                  >
+                    <span className="dashboard-muted">Due Date</span>
+                    <br />
+                    <b>{formatDate(dueDate)}</b>
                   </div>
                 </div>
 
@@ -715,7 +1127,8 @@ export default function StudentDashboard() {
                 </p>
 
                 <p>
-                  <b>Class:</b> {task.className || task.class || className || "N/A"}{" "}
+                  <b>Class:</b>{" "}
+                  {task.className || task.class || className || "N/A"}{" "}
                   <b>Section:</b> {task.section || section || "N/A"}
                 </p>
 
@@ -736,7 +1149,7 @@ export default function StudentDashboard() {
                       </a>
 
                       <a
-                        className="primary-btn"
+                        className="secondary-btn"
                         href={taskFileUrl}
                         download={taskFileName}
                       >
@@ -750,10 +1163,13 @@ export default function StudentDashboard() {
                   <div className="success-box">
                     <p>
                       <b>Status:</b>{" "}
-                      {statusLabel(mySubmission.status || mySubmission.submissionStatus)}
+                      {statusLabel(
+                        mySubmission.status || mySubmission.submissionStatus
+                      )}
                     </p>
 
-                    {(mySubmission.marks || mySubmission.score) && (
+                    {(hasValue(mySubmission.marks) ||
+                      hasValue(mySubmission.score)) && (
                       <p>
                         <b>Marks:</b> {mySubmission.marks || mySubmission.score}
                       </p>
@@ -789,7 +1205,7 @@ export default function StudentDashboard() {
                           </a>
 
                           <a
-                            className="primary-btn"
+                            className="secondary-btn"
                             href={submittedFileUrl}
                             download={submittedFileName}
                           >
@@ -800,26 +1216,35 @@ export default function StudentDashboard() {
                     )}
                   </div>
                 ) : (
-                  <>
-                    <textarea
-                      className="auth-input"
-                      placeholder="Write your homework answer here..."
-                      value={answers[taskId] || ""}
-                      onChange={(event) =>
-                        handleAnswerChange(taskId, event.target.value)
-                      }
-                      rows={4}
-                    />
+                  <div style={{ marginTop: 14 }}>
+                    <div className="auth-form-group">
+                      <label>Your Answer</label>
+                      <textarea
+                        className="auth-input"
+                        placeholder="Write your homework answer here..."
+                        value={answers[taskId] || ""}
+                        onChange={(event) =>
+                          handleAnswerChange(taskId, event.target.value)
+                        }
+                        rows={4}
+                      />
+                    </div>
 
-                    <input
-                      key={fileInputKeys[taskId] || taskId}
-                      className="auth-input"
-                      type="file"
-                      accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
-                      onChange={(event) =>
-                        handleFileChange(taskId, event.target.files[0] || null)
-                      }
-                    />
+                    <div className="auth-form-group">
+                      <label>Upload File</label>
+                      <input
+                        key={fileInputKeys[taskId] || taskId}
+                        className="auth-input"
+                        type="file"
+                        accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                        onChange={(event) =>
+                          handleFileChange(
+                            taskId,
+                            event.target.files?.[0] || null
+                          )
+                        }
+                      />
+                    </div>
 
                     {files[taskId] && (
                       <p className="dashboard-muted">
@@ -829,27 +1254,33 @@ export default function StudentDashboard() {
 
                     <button
                       className="primary-btn"
+                      type="button"
                       disabled={Boolean(submitting[taskId])}
                       onClick={() => handleSubmitHomework(taskId)}
                     >
                       {submitting[taskId] ? "Submitting..." : "Submit Homework"}
                     </button>
-                  </>
+                  </div>
                 )}
               </div>
             );
           })}
       </section>
 
-      <section style={styles.sectionGrid}>
-        <section className="dashboard-card">
+      <section style={styles.twoColumn}>
+        <section id="notices" className="dashboard-card">
           <h2 className="card-title">Latest Notices</h2>
 
           {recentNotices.length === 0 ? (
-            <p>No notices found for your class.</p>
+            <EmptyState
+              title="No notices found"
+              text="Your class has no notices right now."
+            />
           ) : (
             recentNotices.map((notice, index) => (
               <div className="list-card" key={getRecordId(notice, index)}>
+                <StatusBadge type="info">Notice</StatusBadge>
+
                 <h3>{notice.title || notice.noticeTitle || "Notice"}</h3>
 
                 <p>{notice.content || notice.message || notice.description}</p>
@@ -864,22 +1295,27 @@ export default function StudentDashboard() {
           )}
         </section>
 
-        <section className="dashboard-card">
+        <section id="exams" className="dashboard-card">
           <h2 className="card-title">Upcoming Exams</h2>
 
-          {exams.length === 0 ? (
-            <p>No exams found for your class.</p>
+          {upcomingExams.length === 0 ? (
+            <EmptyState
+              title="No exams found"
+              text="No exam schedule has been added for your class yet."
+            />
           ) : (
-            exams.map((exam, index) => (
+            upcomingExams.map((exam, index) => (
               <div className="list-card" key={getRecordId(exam, index)}>
+                <StatusBadge type="purple">Exam</StatusBadge>
+
                 <h3>{exam.title || exam.examTitle || exam.name || "Exam"}</h3>
 
                 <p>
-                  <b>Subject:</b> {exam.subject || "N/A"}
+                  <b>Subject:</b> {exam.subject || exam.subjectName || "N/A"}
                 </p>
 
                 <p>
-                  <b>Date:</b> {formatDate(exam.date || exam.examDate)}
+                  <b>Date:</b> {formatDate(getExamDateValue(exam))}
                 </p>
 
                 <p>
@@ -891,15 +1327,20 @@ export default function StudentDashboard() {
         </section>
       </section>
 
-      <section style={styles.sectionGrid}>
-        <section className="dashboard-card">
+      <section style={styles.twoColumn}>
+        <section id="results" className="dashboard-card">
           <h2 className="card-title">My Results</h2>
 
           {recentResults.length === 0 ? (
-            <p>No result records found yet.</p>
+            <EmptyState
+              title="No results yet"
+              text="Your result records will appear here after teachers publish them."
+            />
           ) : (
             recentResults.map((result, index) => (
               <div className="list-card" key={getRecordId(result, index)}>
+                <StatusBadge type="success">Result</StatusBadge>
+
                 <h3>
                   {result.examTitle ||
                     result.examName ||
@@ -938,23 +1379,81 @@ export default function StudentDashboard() {
           )}
         </section>
 
-        <section className="dashboard-card">
-          <h2 className="card-title">Recent Attendance</h2>
+        <section id="attendance" className="dashboard-card">
+          <h2 className="card-title">Attendance Summary</h2>
+
+          <div
+            style={{
+              background: "#f8fbff",
+              border: "1px solid #e4edf7",
+              borderRadius: 18,
+              padding: 18,
+              marginBottom: 16,
+            }}
+          >
+            <p style={{ margin: "0 0 8px" }}>
+              <b>Attendance Percentage:</b> {attendanceSummary.percentage}%
+            </p>
+
+            <div style={styles.progressTrack}>
+              <div style={styles.progressBar} />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+                gap: 10,
+                marginTop: 16,
+              }}
+            >
+              <div>
+                <StatusBadge type="info">Total {attendanceSummary.total}</StatusBadge>
+              </div>
+
+              <div>
+                <StatusBadge type="success">
+                  Present {attendanceSummary.present}
+                </StatusBadge>
+              </div>
+
+              <div>
+                <StatusBadge type="warning">Late {attendanceSummary.late}</StatusBadge>
+              </div>
+
+              <div>
+                <StatusBadge type="danger">Absent {attendanceSummary.absent}</StatusBadge>
+              </div>
+            </div>
+          </div>
+
+          <h3>Recent Attendance</h3>
 
           {recentAttendance.length === 0 ? (
-            <p>No attendance records found yet.</p>
+            <EmptyState
+              title="No attendance records"
+              text="Your attendance records will appear here."
+            />
           ) : (
             recentAttendance.map((record, index) => {
               const status = record.status || record.attendanceStatus || "N/A";
+              const cleanStatus = normalizeStatus(status);
+
+              const badgeType = cleanStatus.includes("present")
+                ? "success"
+                : cleanStatus.includes("late")
+                ? "warning"
+                : cleanStatus.includes("absent")
+                ? "danger"
+                : "info";
 
               return (
                 <div className="list-card" key={getRecordId(record, index)}>
-                  <p>
-                    <b>Date:</b> {formatDate(record.date || record.attendanceDate)}
-                  </p>
+                  <StatusBadge type={badgeType}>{status}</StatusBadge>
 
                   <p>
-                    <b>Status:</b> {status}
+                    <b>Date:</b>{" "}
+                    {formatDate(record.date || record.attendanceDate)}
                   </p>
 
                   {record.teacherName && (
@@ -969,20 +1468,23 @@ export default function StudentDashboard() {
         </section>
       </section>
 
-      <section className="dashboard-card">
+      <section id="timetable" className="dashboard-card">
         <h2 className="card-title">Weekly Timetable</h2>
 
-        {timetable.length === 0 ? (
-          <p>No timetable found for your class yet.</p>
+        {sortedTimetable.length === 0 ? (
+          <EmptyState
+            title="No timetable found"
+            text="Your weekly timetable has not been added yet."
+          />
         ) : (
-          <div style={styles.sectionGrid}>
-            {timetable.map((item, index) => (
+          <div style={styles.twoColumn}>
+            {sortedTimetable.map((item, index) => (
               <div className="list-card" key={getRecordId(item, index)}>
-                <h3>{item.day || item.weekDay || item.date || "Class Routine"}</h3>
+                <StatusBadge type="info">
+                  {item.day || item.weekDay || item.date || "Routine"}
+                </StatusBadge>
 
-                <p>
-                  <b>Subject:</b> {item.subject || item.subjectName || "N/A"}
-                </p>
+                <h3>{item.subject || item.subjectName || "Subject"}</h3>
 
                 <p>
                   <b>Teacher:</b> {item.teacherName || item.teacher || "N/A"}
