@@ -34,6 +34,8 @@ const readLoggedUser = () => {
 
     return JSON.parse(savedUser);
   } catch {
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
     return {};
   }
 };
@@ -279,6 +281,7 @@ function StatCard({ icon, label, value, subText, tone = "blue" }) {
 
   return (
     <div
+      className="student-stat-card"
       style={{
         background: selectedTone.bg,
         border: `1px solid ${selectedTone.border}`,
@@ -493,9 +496,7 @@ export default function StudentDashboard() {
   }, [tasks]);
 
   const pendingTasks = useMemo(() => {
-    return sortedTasks
-      .filter((task) => !getMySubmission(task))
-      .slice(0, 3);
+    return sortedTasks.filter((task) => !getMySubmission(task)).slice(0, 3);
   }, [sortedTasks, submissions]);
 
   const upcomingExams = useMemo(() => {
@@ -682,10 +683,30 @@ export default function StudentDashboard() {
     }
   };
 
+  const scrollToSection = (sectionId) => {
+    const element = document.getElementById(sectionId);
+
+    if (element) {
+      element.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    window.location.replace("/login");
+
+    /*
+      Your deployed app is using hash URL like:
+      https://hamro-shikshya-frontend.onrender.com/#/student
+
+      So logout must go to /#/login, not /login.
+      This prevents the black/blank screen after logout.
+    */
+    const baseUrl = `${window.location.origin}${window.location.pathname}`;
+    window.location.href = `${baseUrl}#/login`;
   };
 
   const styles = {
@@ -697,9 +718,6 @@ export default function StudentDashboard() {
       padding: 28,
       marginBottom: 24,
       boxShadow: "0 22px 55px rgba(15, 140, 255, 0.22)",
-      display: "grid",
-      gridTemplateColumns: "1.4fr 0.8fr",
-      gap: 22,
       alignItems: "center",
     },
     avatar: {
@@ -721,10 +739,11 @@ export default function StudentDashboard() {
       margin: "14px 0 12px",
       letterSpacing: "-1.2px",
       fontWeight: 950,
+      color: "#ffffff",
     },
     heroText: {
       margin: 0,
-      color: "rgba(255,255,255,0.92)",
+      color: "rgba(255,255,255,0.94)",
       fontSize: 17,
       lineHeight: 1.55,
     },
@@ -741,13 +760,7 @@ export default function StudentDashboard() {
       padding: 16,
       marginBottom: 12,
     },
-    quickLinks: {
-      display: "flex",
-      gap: 10,
-      flexWrap: "wrap",
-      marginTop: 18,
-    },
-    quickLink: {
+    quickButton: {
       background: "#ffffff",
       color: "#0f8cff",
       borderRadius: 999,
@@ -756,24 +769,14 @@ export default function StudentDashboard() {
       fontSize: 14,
       textDecoration: "none",
       boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)",
+      border: "none",
+      cursor: "pointer",
     },
     actionRow: {
       display: "flex",
       gap: 10,
       flexWrap: "wrap",
       marginTop: 18,
-    },
-    statsGrid: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(175px, 1fr))",
-      gap: 16,
-      marginBottom: 24,
-    },
-    twoColumn: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-      gap: 18,
-      alignItems: "start",
     },
     buttonRow: {
       display: "flex",
@@ -806,8 +809,88 @@ export default function StudentDashboard() {
 
   return (
     <main className="dashboard-page">
-      <section style={styles.hero}>
-        <div>
+      <style>
+        {`
+          .student-hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+            gap: 22px;
+          }
+
+          .student-hero-left {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            position: relative;
+            z-index: 2;
+          }
+
+          .student-hero-left::before,
+          .student-hero-left::after {
+            display: none !important;
+          }
+
+          .student-hero-left h1,
+          .student-hero-left p {
+            color: #ffffff !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            -webkit-text-fill-color: #ffffff !important;
+            text-shadow: none !important;
+            mix-blend-mode: normal !important;
+          }
+
+          .student-quick-links {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 18px;
+          }
+
+          .student-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+          }
+
+          .student-stat-card::before,
+          .student-stat-card::after {
+            display: none !important;
+          }
+
+          .student-two-column {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 18px;
+            align-items: start;
+          }
+
+          @media (max-width: 900px) {
+            .student-hero {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          @media (max-width: 520px) {
+            .student-hero {
+              padding: 22px !important;
+            }
+
+            .student-hero-left h1 {
+              font-size: 32px !important;
+            }
+
+            .student-two-column {
+              grid-template-columns: 1fr;
+            }
+          }
+        `}
+      </style>
+
+      <section className="student-hero" style={styles.hero}>
+        <div className="student-hero-left">
           <div style={styles.avatar}>{studentInitial}</div>
 
           <h1 style={styles.heroTitle}>Welcome back, {studentName}</h1>
@@ -817,25 +900,54 @@ export default function StudentDashboard() {
             attendance, results, and timetable from one simple dashboard.
           </p>
 
-          <div style={styles.quickLinks}>
-            <a style={styles.quickLink} href="#homework">
+          <div className="student-quick-links">
+            <button
+              type="button"
+              style={styles.quickButton}
+              onClick={() => scrollToSection("homework")}
+            >
               Homework
-            </a>
-            <a style={styles.quickLink} href="#notices">
+            </button>
+
+            <button
+              type="button"
+              style={styles.quickButton}
+              onClick={() => scrollToSection("notices")}
+            >
               Notices
-            </a>
-            <a style={styles.quickLink} href="#exams">
+            </button>
+
+            <button
+              type="button"
+              style={styles.quickButton}
+              onClick={() => scrollToSection("exams")}
+            >
               Exams
-            </a>
-            <a style={styles.quickLink} href="#results">
+            </button>
+
+            <button
+              type="button"
+              style={styles.quickButton}
+              onClick={() => scrollToSection("results")}
+            >
               Results
-            </a>
-            <a style={styles.quickLink} href="#attendance">
+            </button>
+
+            <button
+              type="button"
+              style={styles.quickButton}
+              onClick={() => scrollToSection("attendance")}
+            >
               Attendance
-            </a>
-            <a style={styles.quickLink} href="#timetable">
+            </button>
+
+            <button
+              type="button"
+              style={styles.quickButton}
+              onClick={() => scrollToSection("timetable")}
+            >
               Timetable
-            </a>
+            </button>
           </div>
 
           <div style={styles.actionRow}>
@@ -851,22 +963,30 @@ export default function StudentDashboard() {
 
         <aside style={styles.heroPanel}>
           <div style={styles.heroMetric}>
-            <p style={{ margin: "0 0 6px", opacity: 0.9 }}>Class</p>
-            <h2 style={{ margin: 0, fontSize: 28 }}>
+            <p style={{ margin: "0 0 6px", opacity: 0.9, color: "#ffffff" }}>
+              Class
+            </p>
+            <h2 style={{ margin: 0, fontSize: 28, color: "#ffffff" }}>
               {className || "Missing"} {section ? `- ${section}` : ""}
             </h2>
           </div>
 
           <div style={styles.heroMetric}>
-            <p style={{ margin: "0 0 6px", opacity: 0.9 }}>Attendance</p>
-            <h2 style={{ margin: 0, fontSize: 28 }}>
+            <p style={{ margin: "0 0 6px", opacity: 0.9, color: "#ffffff" }}>
+              Attendance
+            </p>
+            <h2 style={{ margin: 0, fontSize: 28, color: "#ffffff" }}>
               {attendanceSummary.percentage}%
             </h2>
           </div>
 
           <div style={{ ...styles.heroMetric, marginBottom: 0 }}>
-            <p style={{ margin: "0 0 6px", opacity: 0.9 }}>Pending Homework</p>
-            <h2 style={{ margin: 0, fontSize: 28 }}>{homeworkSummary.pending}</h2>
+            <p style={{ margin: "0 0 6px", opacity: 0.9, color: "#ffffff" }}>
+              Pending Homework
+            </p>
+            <h2 style={{ margin: 0, fontSize: 28, color: "#ffffff" }}>
+              {homeworkSummary.pending}
+            </h2>
           </div>
         </aside>
       </section>
@@ -879,7 +999,7 @@ export default function StudentDashboard() {
         </section>
       )}
 
-      <section style={styles.statsGrid}>
+      <section className="student-stats-grid">
         <StatCard
           icon="📚"
           label="Total Homework"
@@ -929,7 +1049,7 @@ export default function StudentDashboard() {
         />
       </section>
 
-      <section style={styles.twoColumn}>
+      <section className="student-two-column">
         <section className="dashboard-card">
           <h2 className="card-title">My Profile</h2>
 
@@ -983,8 +1103,7 @@ export default function StudentDashboard() {
                       </p>
 
                       <p>
-                        <b>Due:</b>{" "}
-                        {formatDate(task.dueDate || task.deadline)}
+                        <b>Due:</b> {formatDate(task.dueDate || task.deadline)}
                       </p>
                     </div>
                   ))}
@@ -1043,7 +1162,9 @@ export default function StudentDashboard() {
             <StatusBadge type="success">
               Submitted: {homeworkSummary.submitted}
             </StatusBadge>
-            <StatusBadge type="warning">Pending: {homeworkSummary.pending}</StatusBadge>
+            <StatusBadge type="warning">
+              Pending: {homeworkSummary.pending}
+            </StatusBadge>
             {homeworkSummary.late > 0 && (
               <StatusBadge type="danger">Late: {homeworkSummary.late}</StatusBadge>
             )}
@@ -1267,7 +1388,7 @@ export default function StudentDashboard() {
           })}
       </section>
 
-      <section style={styles.twoColumn}>
+      <section className="student-two-column">
         <section id="notices" className="dashboard-card">
           <h2 className="card-title">Latest Notices</h2>
 
@@ -1327,7 +1448,7 @@ export default function StudentDashboard() {
         </section>
       </section>
 
-      <section style={styles.twoColumn}>
+      <section className="student-two-column">
         <section id="results" className="dashboard-card">
           <h2 className="card-title">My Results</h2>
 
@@ -1422,7 +1543,9 @@ export default function StudentDashboard() {
               </div>
 
               <div>
-                <StatusBadge type="danger">Absent {attendanceSummary.absent}</StatusBadge>
+                <StatusBadge type="danger">
+                  Absent {attendanceSummary.absent}
+                </StatusBadge>
               </div>
             </div>
           </div>
@@ -1477,7 +1600,7 @@ export default function StudentDashboard() {
             text="Your weekly timetable has not been added yet."
           />
         ) : (
-          <div style={styles.twoColumn}>
+          <div className="student-two-column">
             {sortedTimetable.map((item, index) => (
               <div className="list-card" key={getRecordId(item, index)}>
                 <StatusBadge type="info">
