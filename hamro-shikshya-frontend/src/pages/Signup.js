@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { API_URL, getApiErrorMessage, signup } from "../api";
+import { API_URL } from "../api";
 import "../styles/App.css";
 
 export default function Signup() {
@@ -21,10 +21,21 @@ export default function Signup() {
   const [error, setError] = useState("");
 
   const handleChange = (e) => {
-    setForm({
-      ...form,
-      [e.target.name]: e.target.value,
-    });
+    const { name, value } = e.target;
+
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const getErrorMessage = async (response) => {
+    try {
+      const data = await response.json();
+      return data?.message || "Signup failed. Please try again.";
+    } catch {
+      return "Signup failed. Please try again.";
+    }
   };
 
   const handleSignup = async (e) => {
@@ -33,10 +44,11 @@ export default function Signup() {
 
     const name = form.name.trim();
     const email = form.email.trim().toLowerCase();
-    const schoolName = form.schoolName.trim();
     const password = form.password;
+    const confirmPassword = form.confirmPassword;
+    const schoolName = form.schoolName.trim();
 
-    if (!name || !email || !password || !form.confirmPassword || !schoolName) {
+    if (!name || !email || !password || !confirmPassword || !schoolName) {
       setError("Please fill in all fields.");
       return;
     }
@@ -46,7 +58,7 @@ export default function Signup() {
       return;
     }
 
-    if (password !== form.confirmPassword) {
+    if (password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
@@ -54,23 +66,39 @@ export default function Signup() {
     try {
       setLoading(true);
 
-      console.log("SIGNUP API URL:", API_URL);
-
-      await signup({
-        name,
-        fullName: name,
-        email,
-        password,
-        schoolName,
-        role: "admin",
+      const response = await fetch(`${API_URL}/auth/signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          fullName: name,
+          adminName: name,
+          email,
+          password,
+          schoolName,
+          role: "admin",
+        }),
       });
+
+      if (!response.ok) {
+        const message = await getErrorMessage(response);
+        throw new Error(message);
+      }
+
+      const data = await response.json();
+
+      if (data?.token && data?.user) {
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
+      }
 
       alert("Admin account created successfully. Please login.");
       navigate("/login", { replace: true });
     } catch (err) {
-      console.log("SIGNUP ERROR:", err.response?.data || err.message);
-
-      setError(getApiErrorMessage(err, "Signup failed. Try again."));
+      console.error("SIGNUP ERROR:", err);
+      setError(err.message || "Signup failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -96,8 +124,9 @@ export default function Signup() {
             {error && <div className="error-box">{error}</div>}
 
             <div className="auth-form-group">
-              <label>Full Name</label>
+              <label htmlFor="name">Full Name</label>
               <input
+                id="name"
                 className="auth-input"
                 type="text"
                 name="name"
@@ -110,8 +139,9 @@ export default function Signup() {
             </div>
 
             <div className="auth-form-group">
-              <label>Email</label>
+              <label htmlFor="email">Email</label>
               <input
+                id="email"
                 className="auth-input"
                 type="email"
                 name="email"
@@ -124,10 +154,11 @@ export default function Signup() {
             </div>
 
             <div className="auth-form-group">
-              <label>Password</label>
+              <label htmlFor="password">Password</label>
 
               <div className="auth-password-wrap">
                 <input
+                  id="password"
                   className="auth-input password-input"
                   type={showPassword ? "text" : "password"}
                   name="password"
@@ -141,7 +172,7 @@ export default function Signup() {
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => setShowPassword((prev) => !prev)}
                 >
                   {showPassword ? "Hide" : "Show"}
                 </button>
@@ -149,10 +180,11 @@ export default function Signup() {
             </div>
 
             <div className="auth-form-group">
-              <label>Confirm Password</label>
+              <label htmlFor="confirmPassword">Confirm Password</label>
 
               <div className="auth-password-wrap">
                 <input
+                  id="confirmPassword"
                   className="auth-input password-input"
                   type={showConfirmPassword ? "text" : "password"}
                   name="confirmPassword"
@@ -166,7 +198,7 @@ export default function Signup() {
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
                 >
                   {showConfirmPassword ? "Hide" : "Show"}
                 </button>
@@ -174,14 +206,16 @@ export default function Signup() {
             </div>
 
             <div className="auth-form-group">
-              <label>School Name</label>
+              <label htmlFor="schoolName">School Name</label>
               <input
+                id="schoolName"
                 className="auth-input"
                 type="text"
                 name="schoolName"
                 placeholder="Enter school name"
                 value={form.schoolName}
                 onChange={handleChange}
+                autoComplete="organization"
                 required
               />
             </div>
