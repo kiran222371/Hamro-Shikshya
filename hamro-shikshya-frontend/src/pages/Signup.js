@@ -20,11 +20,14 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const cleanApiUrl = String(API_URL || "").replace(/\/$/, "");
+  const signupUrl = `${cleanApiUrl}/auth/signup`;
+
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    setForm((prev) => ({
-      ...prev,
+    setForm((previousForm) => ({
+      ...previousForm,
       [name]: value,
     }));
   };
@@ -32,7 +35,11 @@ export default function Signup() {
   const getErrorMessage = async (response) => {
     try {
       const data = await response.json();
-      return data?.message || "Signup failed. Please try again.";
+
+      if (data?.message) return data.message;
+      if (data?.error) return data.error;
+
+      return "Signup failed. Please try again.";
     } catch {
       return "Signup failed. Please try again.";
     }
@@ -44,9 +51,9 @@ export default function Signup() {
 
     const name = form.name.trim();
     const email = form.email.trim().toLowerCase();
+    const schoolName = form.schoolName.trim();
     const password = form.password;
     const confirmPassword = form.confirmPassword;
-    const schoolName = form.schoolName.trim();
 
     if (!name || !email || !password || !confirmPassword || !schoolName) {
       setError("Please fill in all fields.");
@@ -66,7 +73,9 @@ export default function Signup() {
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_URL}/auth/signup`, {
+      console.log("SIGNUP API URL:", signupUrl);
+
+      const response = await fetch(signupUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -87,17 +96,12 @@ export default function Signup() {
         throw new Error(message);
       }
 
-      const data = await response.json();
-
-      if (data?.token && data?.user) {
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-      }
+      await response.json();
 
       alert("Admin account created successfully. Please login.");
       navigate("/login", { replace: true });
     } catch (err) {
-      console.error("SIGNUP ERROR:", err);
+      console.log("SIGNUP ERROR:", err);
       setError(err.message || "Signup failed. Please try again.");
     } finally {
       setLoading(false);
@@ -114,6 +118,7 @@ export default function Signup() {
           </div>
 
           <h1 className="auth-title">Create account</h1>
+
           <p className="auth-subtitle">
             Build your school workspace and manage everything easily.
           </p>
@@ -124,9 +129,8 @@ export default function Signup() {
             {error && <div className="error-box">{error}</div>}
 
             <div className="auth-form-group">
-              <label htmlFor="name">Full Name</label>
+              <label>Full Name</label>
               <input
-                id="name"
                 className="auth-input"
                 type="text"
                 name="name"
@@ -134,14 +138,14 @@ export default function Signup() {
                 value={form.name}
                 onChange={handleChange}
                 autoComplete="name"
+                disabled={loading}
                 required
               />
             </div>
 
             <div className="auth-form-group">
-              <label htmlFor="email">Email</label>
+              <label>Email</label>
               <input
-                id="email"
                 className="auth-input"
                 type="email"
                 name="email"
@@ -149,16 +153,16 @@ export default function Signup() {
                 value={form.email}
                 onChange={handleChange}
                 autoComplete="email"
+                disabled={loading}
                 required
               />
             </div>
 
             <div className="auth-form-group">
-              <label htmlFor="password">Password</label>
+              <label>Password</label>
 
               <div className="auth-password-wrap">
                 <input
-                  id="password"
                   className="auth-input password-input"
                   type={showPassword ? "text" : "password"}
                   name="password"
@@ -166,13 +170,15 @@ export default function Signup() {
                   value={form.password}
                   onChange={handleChange}
                   autoComplete="new-password"
+                  disabled={loading}
                   required
                 />
 
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowPassword((prev) => !prev)}
+                  onClick={() => setShowPassword((value) => !value)}
+                  disabled={loading}
                 >
                   {showPassword ? "Hide" : "Show"}
                 </button>
@@ -180,11 +186,10 @@ export default function Signup() {
             </div>
 
             <div className="auth-form-group">
-              <label htmlFor="confirmPassword">Confirm Password</label>
+              <label>Confirm Password</label>
 
               <div className="auth-password-wrap">
                 <input
-                  id="confirmPassword"
                   className="auth-input password-input"
                   type={showConfirmPassword ? "text" : "password"}
                   name="confirmPassword"
@@ -192,13 +197,15 @@ export default function Signup() {
                   value={form.confirmPassword}
                   onChange={handleChange}
                   autoComplete="new-password"
+                  disabled={loading}
                   required
                 />
 
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  onClick={() => setShowConfirmPassword((value) => !value)}
+                  disabled={loading}
                 >
                   {showConfirmPassword ? "Hide" : "Show"}
                 </button>
@@ -206,16 +213,16 @@ export default function Signup() {
             </div>
 
             <div className="auth-form-group">
-              <label htmlFor="schoolName">School Name</label>
+              <label>School Name</label>
+
               <input
-                id="schoolName"
                 className="auth-input"
                 type="text"
                 name="schoolName"
                 placeholder="Enter school name"
                 value={form.schoolName}
                 onChange={handleChange}
-                autoComplete="organization"
+                disabled={loading}
                 required
               />
             </div>
