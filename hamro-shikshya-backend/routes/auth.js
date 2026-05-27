@@ -8,7 +8,7 @@ const router = express.Router();
 
 const cleanText = (value) => String(value || "").trim();
 
-const normalizeEmail = (email) => cleanText(email).toLowerCase();
+const cleanEmail = (value) => cleanText(value).toLowerCase();
 
 const normalizeRole = (role) => {
   const cleanedRole = cleanText(role).toLowerCase();
@@ -18,140 +18,73 @@ const normalizeRole = (role) => {
   if (cleanedRole === "teacher") return "teacher";
   if (cleanedRole === "student") return "student";
 
-  return "";
+  return "admin";
 };
 
-const escapeRegExp = (value) => {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-};
+const getValidCoordinates = (body = {}) => {
+  const longitude =
+    body.longitude ??
+    body.lng ??
+    body.addressDetails?.longitude ??
+    body.addressDetails?.lng ??
+    body.location?.coordinates?.[0];
 
-const getJwtSecret = () => {
-  const secret = process.env.JWT_SECRET;
+  const latitude =
+    body.latitude ??
+    body.lat ??
+    body.addressDetails?.latitude ??
+    body.addressDetails?.lat ??
+    body.location?.coordinates?.[1];
 
-  if (!secret) {
-    throw new Error("JWT_SECRET is missing in backend environment variables.");
+  const lngNumber = Number(longitude);
+  const latNumber = Number(latitude);
+
+  if (!Number.isFinite(lngNumber) || !Number.isFinite(latNumber)) {
+    return null;
   }
 
-  return secret;
+  return [lngNumber, latNumber];
 };
 
-const createToken = (user) => {
+function createToken(user) {
   return jwt.sign(
     {
       id: user._id,
       role: user.role,
-      schoolId: user.schoolId?._id || user.schoolId,
+      schoolId: user.schoolId,
     },
-    getJwtSecret(),
-    {
-      expiresIn: "7d",
-    }
+    process.env.JWT_SECRET || "hamro-shikshya-secret-key",
+    { expiresIn: "7d" }
   );
-};
+}
 
-const buildSchoolPayload = (body = {}) => {
-  const schoolName = cleanText(body.schoolName || body.school || body.institutionName);
-
-  const address = cleanText(body.address);
-  const phone = cleanText(body.phone || body.contact);
-  const email = normalizeEmail(body.schoolEmail || body.email);
-  const website = cleanText(body.website);
-  const principalName = cleanText(body.principalName || body.principal);
-  const adminName = cleanText(body.adminName || body.name);
-
-  const latitude =
-    body.latitude !== undefined && body.latitude !== null && body.latitude !== ""
-      ? Number(body.latitude)
-      : null;
-
-  const longitude =
-    body.longitude !== undefined && body.longitude !== null && body.longitude !== ""
-      ? Number(body.longitude)
-      : null;
-
-  const payload = {
-    schoolName,
-    address,
-    phone,
-    email,
-    website,
-    principalName,
-    adminName,
-    logoUrl: cleanText(body.logoUrl),
-    isActive: true,
-    addressDetails: {
-      formattedAddress: cleanText(body.formattedAddress || body.address),
-      addressLine1: cleanText(body.addressLine1 || body.address),
-      municipality: cleanText(body.municipality),
-      district: cleanText(body.district),
-      province: cleanText(body.province),
-      country: cleanText(body.country) || "Nepal",
-      postalCode: cleanText(body.postalCode),
-      placeId: cleanText(body.placeId),
-      latitude: Number.isFinite(latitude) ? latitude : null,
-      longitude: Number.isFinite(longitude) ? longitude : null,
-    },
-  };
-
-  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-    payload.location = {
-      type: "Point",
-      coordinates: [longitude, latitude],
-    };
-  }
-
-  return payload;
-};
-
-const formatUserResponse = (user, school = null) => {
-  const populatedSchool =
-    school ||
-    (user.schoolId && typeof user.schoolId === "object" ? user.schoolId : null);
-
-  return {
-    _id: user._id,
-    id: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    schoolId: populatedSchool?._id || user.schoolId,
-    schoolName: populatedSchool?.schoolName || "",
-    className: user.className || "",
-    section: user.section || "",
-    rollNumber: user.rollNumber || "",
-    studentCode: user.studentCode || "",
-    employeeId: user.employeeId || "",
-    profileImage: user.profileImage || "",
-    isActive: user.isActive,
-    accountStatus: user.accountStatus,
-  };
-};
-
-// SIGNUP - first account must be admin/principal
-const signupHandler = async (req, res) => {
+// SIGNUP - creates a new school and a new admin account
+router.post("/signup", async (req, res) => {
   try {
-    const name = cleanText(req.body.name || req.body.fullName);
-    const email = normalizeEmail(req.body.email);
-    const password = String(req.body.password || "");
-    const schoolName = cleanText(req.body.schoolName || req.body.school);
-    const finalRole = normalizeRole(req.body.role || "admin");
+    const body = req.body || {};
+
+    const name = cleanText(body.name || body.fullName || body.adminName);
+    const email = cleanEmail(body.email);
+    const password = String(body.password || "");
+    const role = normalizeRole(body.role);
+    const schoolName = cleanText(body.schoolName || body.nameOfSchool);
 
     if (!name || !email || !password || !schoolName) {
       return res.status(400).json({
-        message: "Name, email, password and school name are required.",
+        message: "Name, email, password and school name are required",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
-        message: "Password must be at least 6 characters.",
+        message: "Password must be at least 6 characters long",
       });
     }
 
-    if (finalRole !== "admin") {
+    if (role !== "admin") {
       return res.status(400).json({
         message:
-          "Only Admin / Principal can sign up first. Teachers and students must be added by the school admin.",
+          "Only admin accounts can be created from signup. Teachers and students must be added by the school admin.",
       });
     }
 
@@ -159,27 +92,68 @@ const signupHandler = async (req, res) => {
 
     if (existingUser) {
       return res.status(400).json({
-        message: "User already exists with this email.",
+        message: "An account already exists with this email",
       });
     }
 
-    let school = await School.findOne({
-      schoolName: {
-        $regex: `^${escapeRegExp(schoolName)}$`,
-        $options: "i",
-      },
-    });
+    const addressDetails = {
+      formattedAddress: cleanText(
+        body.formattedAddress || body.addressDetails?.formattedAddress
+      ),
+      addressLine1: cleanText(
+        body.addressLine1 || body.address || body.addressDetails?.addressLine1
+      ),
+      municipality: cleanText(
+        body.municipality || body.addressDetails?.municipality
+      ),
+      district: cleanText(body.district || body.addressDetails?.district),
+      province: cleanText(body.province || body.addressDetails?.province),
+      country: cleanText(body.country || body.addressDetails?.country) || "Nepal",
+      postalCode: cleanText(
+        body.postalCode || body.addressDetails?.postalCode
+      ),
+      placeId: cleanText(body.placeId || body.addressDetails?.placeId),
+      latitude:
+        body.latitude ??
+        body.lat ??
+        body.addressDetails?.latitude ??
+        null,
+      longitude:
+        body.longitude ??
+        body.lng ??
+        body.addressDetails?.longitude ??
+        null,
+    };
 
-    if (!school) {
-      const schoolPayload = buildSchoolPayload({
-        ...req.body,
-        schoolName,
-        adminName: name,
-        schoolEmail: req.body.schoolEmail || "",
-      });
+    const coordinates = getValidCoordinates(body);
 
-      school = await School.create(schoolPayload);
+    const schoolPayload = {
+      schoolName,
+
+      // legacy field, useful if your old database index still checks "name"
+      name: schoolName,
+
+      address: cleanText(body.address || addressDetails.formattedAddress),
+      addressDetails,
+      phone: cleanText(body.phone),
+      email,
+      website: cleanText(body.website),
+      principalName: cleanText(body.principalName),
+      adminName: name,
+      logoUrl: cleanText(body.logoUrl),
+      isActive: true,
+    };
+
+    if (coordinates) {
+      schoolPayload.location = {
+        type: "Point",
+        coordinates,
+      };
     }
+
+    // This creates a new school every time.
+    // That means unlimited admin signups are allowed as long as email is different.
+    const school = await School.create(schoolPayload);
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -189,61 +163,94 @@ const signupHandler = async (req, res) => {
       password: hashedPassword,
       role: "admin",
       schoolId: school._id,
-      phone: cleanText(req.body.phone),
-      address: cleanText(req.body.address),
-      isActive: true,
       accountStatus: "active",
+      isActive: true,
     });
 
     const token = createToken(user);
 
     return res.status(201).json({
-      message: "Admin account created successfully.",
+      message: "Admin account created successfully",
       token,
-      user: formatUserResponse(user, school),
+      user: {
+        _id: user._id,
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        schoolId: school._id,
+        schoolName: school.schoolName,
+      },
     });
   } catch (err) {
-    console.error("SIGNUP ERROR:", err);
+    console.error("Signup error:", err);
+
+    if (err.code === 11000) {
+      if (err.keyPattern?.email || err.keyValue?.email) {
+        return res.status(400).json({
+          message: "An account already exists with this email",
+        });
+      }
+
+      if (err.keyPattern?.name || err.keyValue?.name !== undefined) {
+        return res.status(400).json({
+          message:
+            "Old MongoDB school name index is blocking signup. Delete the old schools index called name_1 from MongoDB Atlas.",
+        });
+      }
+
+      return res.status(400).json({
+        message: "Duplicate record found. Please use different details.",
+      });
+    }
+
+    if (err.name === "ValidationError") {
+      return res.status(400).json({
+        message: Object.values(err.errors)
+          .map((item) => item.message)
+          .join(", "),
+      });
+    }
 
     return res.status(500).json({
-      message: err.message || "Signup failed.",
+      message: err.message || "Signup failed",
     });
   }
-};
+});
 
 // LOGIN
-const loginHandler = async (req, res) => {
+router.post("/login", async (req, res) => {
   try {
-    const email = normalizeEmail(req.body.email);
-    const password = String(req.body.password || "");
+    const email = cleanEmail(req.body?.email);
+    const password = String(req.body?.password || "");
 
     if (!email || !password) {
       return res.status(400).json({
-        message: "Email and password are required.",
+        message: "Email and password are required",
       });
     }
 
     const user = await User.findOne({ email }).populate(
       "schoolId",
-      "schoolName email logoUrl isActive"
+      "schoolName name"
     );
 
     if (!user) {
       return res.status(404).json({
-        message: "User not found.",
-      });
-    }
-
-    if (user.isActive === false || user.accountStatus === "deactivated") {
-      return res.status(403).json({
-        message: "This account is deactivated. Please contact your school admin.",
+        message: "User not found",
       });
     }
 
     if (!user.password) {
       return res.status(400).json({
         message:
-          "This account has no password saved. Delete this user from MongoDB and sign up again.",
+          "This account has no password saved. Please create a new account or reset this user in the database.",
+      });
+    }
+
+    if (user.accountStatus === "deactivated" || user.isActive === false) {
+      return res.status(403).json({
+        message: "This account has been deactivated",
       });
     }
 
@@ -251,7 +258,7 @@ const loginHandler = async (req, res) => {
 
     if (!isPasswordCorrect) {
       return res.status(400).json({
-        message: "Invalid email or password.",
+        message: "Invalid password",
       });
     }
 
@@ -261,23 +268,28 @@ const loginHandler = async (req, res) => {
     const token = createToken(user);
 
     return res.status(200).json({
-      message: "Login successful.",
+      message: "Login successful",
       token,
-      user: formatUserResponse(user),
+      user: {
+        _id: user._id,
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        schoolId: user.schoolId?._id || user.schoolId,
+        schoolName:
+          user.schoolId?.schoolName || user.schoolId?.name || "",
+        className: user.className || "",
+        section: user.section || "",
+      },
     });
   } catch (err) {
-    console.error("LOGIN ERROR:", err);
+    console.error("Login error:", err);
 
     return res.status(500).json({
-      message: err.message || "Login failed.",
+      message: err.message || "Login failed",
     });
   }
-};
-
-router.post("/signup", signupHandler);
-router.post("/register", signupHandler);
-
-router.post("/login", loginHandler);
-router.post("/signin", loginHandler);
+});
 
 export default router;
