@@ -4,7 +4,18 @@ export const FRONTEND_URL = "https://hamro-shikshya-frontend.onrender.com";
 export const BACKEND_URL = "https://hamro-shikshya-backend.onrender.com";
 export const API_URL = `${BACKEND_URL}/api`;
 
-const cleanRole = (role) => String(role || "").trim().toLowerCase();
+const cleanText = (value) => String(value || "").trim();
+
+const cleanRole = (role) => cleanText(role).toLowerCase();
+
+export const clearAuth = () => {
+  try {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+  } catch {
+    // ignore localStorage errors
+  }
+};
 
 export const getDashboardPath = (role) => {
   const normalizedRole = cleanRole(role);
@@ -26,6 +37,10 @@ export const normalizeUser = (user) => {
   return {
     ...user,
     role,
+    name: cleanText(user.name),
+    email: cleanText(user.email).toLowerCase(),
+    schoolId: user.schoolId || user.school?._id || user.school?.id || "",
+    schoolName: cleanText(user.schoolName || user.school?.schoolName || user.school?.name),
   };
 };
 
@@ -36,6 +51,7 @@ export const getStoredAuth = () => {
 
     if (!token || !userText || userText === "undefined" || userText === "null") {
       clearAuth();
+
       return {
         token: null,
         user: null,
@@ -47,6 +63,7 @@ export const getStoredAuth = () => {
 
     if (!user) {
       clearAuth();
+
       return {
         token: null,
         user: null,
@@ -57,7 +74,7 @@ export const getStoredAuth = () => {
       token,
       user,
     };
-  } catch (error) {
+  } catch {
     clearAuth();
 
     return {
@@ -68,7 +85,7 @@ export const getStoredAuth = () => {
 };
 
 export const saveAuth = (token, user) => {
-  const cleanToken = String(token || "").trim();
+  const cleanToken = cleanText(token);
   const normalizedUser = normalizeUser(user);
 
   if (!cleanToken || !normalizedUser) {
@@ -76,15 +93,13 @@ export const saveAuth = (token, user) => {
     return false;
   }
 
-  localStorage.setItem("token", cleanToken);
-  localStorage.setItem("user", JSON.stringify(normalizedUser));
-
-  return true;
-};
-
-export const clearAuth = () => {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
+  try {
+    localStorage.setItem("token", cleanToken);
+    localStorage.setItem("user", JSON.stringify(normalizedUser));
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 export const logout = () => {
