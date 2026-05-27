@@ -1,21 +1,35 @@
 export const VALID_ROLES = ["admin", "teacher", "student"];
 
-export const FRONTEND_URL = "https://hamro-shikshya-frontend.onrender.com";
-export const BACKEND_URL = "https://hamro-shikshya-backend.onrender.com";
-export const API_URL = `${BACKEND_URL}/api`;
+const DEPLOYED_FRONTEND_URL = "https://hamro-shikshya-frontend.onrender.com";
+const DEPLOYED_BACKEND_URL = "https://hamro-shikshya-backend.onrender.com";
 
-const cleanText = (value) => String(value || "").trim();
-
-const cleanRole = (role) => cleanText(role).toLowerCase();
-
-export const clearAuth = () => {
+const getEnvValue = (key, fallback = "") => {
   try {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    if (typeof process !== "undefined" && process.env && process.env[key]) {
+      return process.env[key];
+    }
+
+    return fallback;
   } catch {
-    // ignore localStorage errors
+    return fallback;
   }
 };
+
+const removeTrailingSlash = (value) => String(value || "").replace(/\/+$/, "");
+
+export const FRONTEND_URL = removeTrailingSlash(
+  getEnvValue("REACT_APP_FRONTEND_URL", DEPLOYED_FRONTEND_URL)
+);
+
+export const BACKEND_URL = removeTrailingSlash(
+  getEnvValue("REACT_APP_BACKEND_URL", DEPLOYED_BACKEND_URL)
+);
+
+export const API_URL = removeTrailingSlash(
+  getEnvValue("REACT_APP_API_URL", `${BACKEND_URL}/api`)
+);
+
+const cleanRole = (role) => String(role || "").trim().toLowerCase();
 
 export const getDashboardPath = (role) => {
   const normalizedRole = cleanRole(role);
@@ -37,11 +51,16 @@ export const normalizeUser = (user) => {
   return {
     ...user,
     role,
-    name: cleanText(user.name),
-    email: cleanText(user.email).toLowerCase(),
-    schoolId: user.schoolId || user.school?._id || user.school?.id || "",
-    schoolName: cleanText(user.schoolName || user.school?.schoolName || user.school?.name),
   };
+};
+
+export const clearAuth = () => {
+  try {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+  } catch {
+    // ignore localStorage errors
+  }
 };
 
 export const getStoredAuth = () => {
@@ -85,7 +104,7 @@ export const getStoredAuth = () => {
 };
 
 export const saveAuth = (token, user) => {
-  const cleanToken = cleanText(token);
+  const cleanToken = String(token || "").trim();
   const normalizedUser = normalizeUser(user);
 
   if (!cleanToken || !normalizedUser) {
@@ -104,7 +123,12 @@ export const saveAuth = (token, user) => {
 
 export const logout = () => {
   clearAuth();
-  window.location.href = "/login";
+
+  try {
+    window.location.href = "/#/login";
+  } catch {
+    // ignore redirect errors
+  }
 };
 
 export const isLoggedIn = () => {
