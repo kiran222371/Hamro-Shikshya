@@ -56,13 +56,13 @@ const userSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, "Name is required."],
+      required: true,
       trim: true,
     },
 
     email: {
       type: String,
-      required: [true, "Email is required."],
+      required: true,
       unique: true,
       lowercase: true,
       trim: true,
@@ -70,21 +70,19 @@ const userSchema = new mongoose.Schema(
 
     password: {
       type: String,
-      required: [true, "Password is required."],
-      select: false,
+      required: true,
     },
 
     role: {
       type: String,
       enum: ["admin", "teacher", "student"],
-      required: [true, "Role is required."],
-      default: "student",
+      required: true,
     },
 
     schoolId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "School",
-      required: [true, "School ID is required."],
+      required: true,
     },
 
     phone: {
@@ -210,7 +208,6 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ schoolId: 1, role: 1 });
 userSchema.index({ schoolId: 1, className: 1, section: 1 });
 userSchema.index({
@@ -220,7 +217,6 @@ userSchema.index({
 });
 
 userSchema.set("toJSON", {
-  virtuals: true,
   transform: (doc, ret) => {
     delete ret.password;
     delete ret.__v;
