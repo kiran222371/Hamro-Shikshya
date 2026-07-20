@@ -46,7 +46,7 @@ const getValidCoordinates = (body = {}) => {
   return [lngNumber, latNumber];
 };
 
-function createToken(user) {
+const createToken = (user) => {
   return jwt.sign(
     {
       id: user._id,
@@ -56,9 +56,11 @@ function createToken(user) {
     process.env.JWT_SECRET || "hamro-shikshya-secret-key",
     { expiresIn: "7d" }
   );
-}
+};
 
-// SIGNUP - creates a new school and a new admin account
+// ===============================
+// SIGNUP - CREATE SCHOOL + ADMIN
+// ===============================
 router.post("/signup", async (req, res) => {
   try {
     const body = req.body || {};
@@ -100,24 +102,34 @@ router.post("/signup", async (req, res) => {
       formattedAddress: cleanText(
         body.formattedAddress || body.addressDetails?.formattedAddress
       ),
+
       addressLine1: cleanText(
         body.addressLine1 || body.address || body.addressDetails?.addressLine1
       ),
+
       municipality: cleanText(
         body.municipality || body.addressDetails?.municipality
       ),
+
       district: cleanText(body.district || body.addressDetails?.district),
+
       province: cleanText(body.province || body.addressDetails?.province),
-      country: cleanText(body.country || body.addressDetails?.country) || "Nepal",
+
+      country:
+        cleanText(body.country || body.addressDetails?.country) || "Nepal",
+
       postalCode: cleanText(
         body.postalCode || body.addressDetails?.postalCode
       ),
+
       placeId: cleanText(body.placeId || body.addressDetails?.placeId),
+
       latitude:
         body.latitude ??
         body.lat ??
         body.addressDetails?.latitude ??
         null,
+
       longitude:
         body.longitude ??
         body.lng ??
@@ -129,11 +141,11 @@ router.post("/signup", async (req, res) => {
 
     const schoolPayload = {
       schoolName,
-
-      // legacy field, useful if your old database index still checks "name"
-      name: schoolName,
-
-      address: cleanText(body.address || addressDetails.formattedAddress),
+      address: cleanText(
+        body.address ||
+          addressDetails.formattedAddress ||
+          addressDetails.addressLine1
+      ),
       addressDetails,
       phone: cleanText(body.phone),
       email,
@@ -151,8 +163,6 @@ router.post("/signup", async (req, res) => {
       };
     }
 
-    // This creates a new school every time.
-    // That means unlimited admin signups are allowed as long as email is different.
     const school = await School.create(schoolPayload);
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -195,7 +205,14 @@ router.post("/signup", async (req, res) => {
       if (err.keyPattern?.name || err.keyValue?.name !== undefined) {
         return res.status(400).json({
           message:
-            "Old MongoDB school name index is blocking signup. Delete the old schools index called name_1 from MongoDB Atlas.",
+            "Old MongoDB index name_1 is still blocking signup. Delete name_1 from the schools collection indexes in MongoDB Atlas.",
+        });
+      }
+
+      if (err.keyPattern?.schoolName || err.keyValue?.schoolName) {
+        return res.status(400).json({
+          message:
+            "This school name already exists because schoolName has a unique index. Remove the unique index or use another school name.",
         });
       }
 
@@ -218,7 +235,9 @@ router.post("/signup", async (req, res) => {
   }
 });
 
+// ===============================
 // LOGIN
+// ===============================
 router.post("/login", async (req, res) => {
   try {
     const email = cleanEmail(req.body?.email);
@@ -232,7 +251,7 @@ router.post("/login", async (req, res) => {
 
     const user = await User.findOne({ email }).populate(
       "schoolId",
-      "schoolName name"
+      "schoolName"
     );
 
     if (!user) {
@@ -244,7 +263,7 @@ router.post("/login", async (req, res) => {
     if (!user.password) {
       return res.status(400).json({
         message:
-          "This account has no password saved. Please create a new account or reset this user in the database.",
+          "This account has no password saved. Please delete this old user from MongoDB and create the account again.",
       });
     }
 
@@ -277,10 +296,11 @@ router.post("/login", async (req, res) => {
         email: user.email,
         role: user.role,
         schoolId: user.schoolId?._id || user.schoolId,
-        schoolName:
-          user.schoolId?.schoolName || user.schoolId?.name || "",
+        schoolName: user.schoolId?.schoolName || "",
         className: user.className || "",
         section: user.section || "",
+        accountStatus: user.accountStatus || "active",
+        isActive: user.isActive !== false,
       },
     });
   } catch (err) {
