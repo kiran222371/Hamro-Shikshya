@@ -10,37 +10,28 @@ const cleanText = (value) => String(value || "").trim();
 
 const cleanEmail = (value) => cleanText(value).toLowerCase();
 
-const normalizeRole = (role) => {
-  const cleanRole = cleanText(role).toLowerCase();
-
-  if (cleanRole === "principal") return "admin";
-  if (cleanRole === "admin") return "admin";
-  if (cleanRole === "teacher") return "teacher";
-  if (cleanRole === "student") return "student";
-
-  return "";
+const escapeRegex = (value) => {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
 
 const createToken = (user) => {
   if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET is missing in backend environment variables.");
+    throw new Error("JWT_SECRET is missing in backend environment variables");
   }
 
   return jwt.sign(
     {
-      id: user._id,
+      id: String(user._id),
       role: user.role,
-      schoolId: user.schoolId,
+      schoolId: String(user.schoolId?._id || user.schoolId),
     },
     process.env.JWT_SECRET,
-    {
-      expiresIn: "7d",
-    }
+    { expiresIn: "7d" }
   );
 };
 
 const buildUserResponse = (user, school = null) => {
-  const schoolData = school || user.schoolId;
+  const schoolDoc = school || user.schoolId;
 
   return {
     _id: user._id,
@@ -48,46 +39,44 @@ const buildUserResponse = (user, school = null) => {
     name: user.name,
     email: user.email,
     role: user.role,
-    schoolId: schoolData?._id || user.schoolId,
-    schoolName: schoolData?.schoolName || "",
+    schoolId: schoolDoc?._id || user.schoolId,
+    schoolName: schoolDoc?.schoolName || schoolDoc?.name || "",
     className: user.className || "",
     section: user.section || "",
     phone: user.phone || "",
-    address: user.address || "",
     profileImage: user.profileImage || "",
-    accountStatus: user.accountStatus || "active",
     isActive: user.isActive,
+    accountStatus: user.accountStatus,
   };
 };
 
-
+// SIGNUP - creates first admin and school
 router.post("/signup", async (req, res) => {
   try {
     const name = cleanText(req.body.name || req.body.fullName);
     const email = cleanEmail(req.body.email);
     const password = cleanText(req.body.password);
-    const role = normalizeRole(req.body.role || "admin");
+    const requestedRole = cleanText(req.body.role || "admin").toLowerCase();
 
     const schoolName = cleanText(
       req.body.schoolName ||
         req.body.school ||
-        req.body.school_name ||
-        req.body.institutionName
+        req.body.institutionName ||
+        req.body.organizationName
     );
 
     if (!name || !email || !password || !schoolName) {
       return res.status(400).json({
-        message: "Name, email, password and school name are required.",
+        message: "Name, email, password and school name are required",
       });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({
-        message: "Password must be at least 6 characters long.",
-      });
-    }
+    const finalRole =
+      requestedRole === "admin" || requestedRole === "principal"
+        ? "admin"
+        : requestedRole;
 
-    if (role !== "admin") {
+    if (finalRole !== "admin") {
       return res.status(400).json({
         message:
           "Only Admin / Principal can sign up first. Teachers and students must be added by the school admin.",
@@ -98,13 +87,13 @@ router.post("/signup", async (req, res) => {
 
     if (existingUser) {
       return res.status(400).json({
-        message: "User already exists with this email.",
+        message: "User already exists with this email",
       });
     }
 
     let school = await School.findOne({
       schoolName: {
-        $regex: `^${schoolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        $regex: `^${escapeRegex(schoolName)}$`,
         $options: "i",
       },
     });
@@ -114,7 +103,30 @@ router.post("/signup", async (req, res) => {
         schoolName,
         adminName: name,
         email,
+        address: cleanText(req.body.address),
+        phone: cleanText(req.body.phone),
+        website: cleanText(req.body.website),
+        principalName: cleanText(req.body.principalName),
+        logoUrl: cleanText(req.body.logoUrl),
         isActive: true,
+        addressDetails: {
+          formattedAddress: cleanText(req.body.formattedAddress),
+          addressLine1: cleanText(req.body.addressLine1 || req.body.address),
+          municipality: cleanText(req.body.municipality),
+          district: cleanText(req.body.district),
+          province: cleanText(req.body.province),
+          country: cleanText(req.body.country) || "Nepal",
+          postalCode: cleanText(req.body.postalCode),
+          placeId: cleanText(req.body.placeId),
+          latitude:
+            req.body.latitude !== undefined && req.body.latitude !== ""
+              ? Number(req.body.latitude)
+              : null,
+          longitude:
+            req.body.longitude !== undefined && req.body.longitude !== ""
+              ? Number(req.body.longitude)
+              : null,
+        },
       });
     }
 
@@ -133,34 +145,26 @@ router.post("/signup", async (req, res) => {
     const token = createToken(user);
 
     return res.status(201).json({
-      message: "Admin account created successfully.",
+      message: "Admin account created successfully",
       token,
       user: buildUserResponse(user, school),
     });
   } catch (err) {
     console.error("SIGNUP ERROR:", err);
 
+    if (err.code === 11000) {
+      return res.status(400).json({
+        message: "User already exists with this email",
+      });
+    }
+
     return res.status(500).json({
-      message: err.message || "Signup failed. Please try again.",
+      message: err.message || "Signup failed",
     });
   }
 });
 
-// Optional alias, useful if frontend sends /auth/register
-router.post("/register", async (req, res) => {
-  try {
-    req.url = "/signup";
-    return router.handle(req, res);
-  } catch (err) {
-    console.error("REGISTER ERROR:", err);
-
-    return res.status(500).json({
-      message: err.message || "Registration failed.",
-    });
-  }
-});
-
-
+// LOGIN
 router.post("/login", async (req, res) => {
   try {
     const email = cleanEmail(req.body.email);
@@ -168,24 +172,24 @@ router.post("/login", async (req, res) => {
 
     if (!email || !password) {
       return res.status(400).json({
-        message: "Email and password are required.",
+        message: "Email and password are required",
       });
     }
 
     const user = await User.findOne({ email }).populate(
       "schoolId",
-      "schoolName email phone address logoUrl isActive"
+      "schoolName name email phone address logoUrl isActive"
     );
 
     if (!user) {
       return res.status(404).json({
-        message: "User not found.",
+        message: "User not found",
       });
     }
 
-    if (user.accountStatus === "deactivated" || user.isActive === false) {
+    if (!user.isActive || user.accountStatus === "deactivated") {
       return res.status(403).json({
-        message: "Your account is deactivated. Please contact your school admin.",
+        message: "This account has been deactivated",
       });
     }
 
@@ -193,7 +197,7 @@ router.post("/login", async (req, res) => {
 
     if (!isPasswordCorrect) {
       return res.status(400).json({
-        message: "Invalid password.",
+        message: "Invalid password",
       });
     }
 
@@ -203,7 +207,7 @@ router.post("/login", async (req, res) => {
     const token = createToken(user);
 
     return res.status(200).json({
-      message: "Login successful.",
+      message: "Login successful",
       token,
       user: buildUserResponse(user),
     });
@@ -211,21 +215,7 @@ router.post("/login", async (req, res) => {
     console.error("LOGIN ERROR:", err);
 
     return res.status(500).json({
-      message: err.message || "Login failed. Please try again.",
-    });
-  }
-});
-
-// Optional alias, useful if frontend sends /auth/signin
-router.post("/signin", async (req, res) => {
-  try {
-    req.url = "/login";
-    return router.handle(req, res);
-  } catch (err) {
-    console.error("SIGNIN ERROR:", err);
-
-    return res.status(500).json({
-      message: err.message || "Signin failed.",
+      message: err.message || "Login failed",
     });
   }
 });
