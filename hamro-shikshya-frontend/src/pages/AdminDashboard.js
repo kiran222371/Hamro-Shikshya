@@ -411,7 +411,9 @@ export default function AdminDashboard() {
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    window.location.href = "/login";
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/#/login";
   };
 
   const toArray = (res) => {
