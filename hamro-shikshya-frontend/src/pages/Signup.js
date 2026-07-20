@@ -20,28 +20,19 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const cleanApiUrl = String(API_URL || "").replace(/\/$/, "");
-  const signupUrl = `${cleanApiUrl}/auth/signup`;
-
   const handleChange = (e) => {
-    const { name, value } = e.target;
-
-    setForm((previousForm) => ({
-      ...previousForm,
-      [name]: value,
+    setForm((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
     }));
   };
 
   const getErrorMessage = async (response) => {
     try {
       const data = await response.json();
-
-      if (data?.message) return data.message;
-      if (data?.error) return data.error;
-
-      return "Signup failed. Please try again.";
+      return data?.message || data?.error || "Signup failed. Try again.";
     } catch {
-      return "Signup failed. Please try again.";
+      return "Signup failed. Try again.";
     }
   };
 
@@ -73,9 +64,9 @@ export default function Signup() {
     try {
       setLoading(true);
 
-      console.log("SIGNUP API URL:", signupUrl);
+      console.log("SIGNUP API URL:", `${API_URL}/auth/signup`);
 
-      const response = await fetch(signupUrl, {
+      const response = await fetch(`${API_URL}/auth/signup`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -96,13 +87,15 @@ export default function Signup() {
         throw new Error(message);
       }
 
-      await response.json();
+      const data = await response.json();
+
+      console.log("SIGNUP SUCCESS:", data);
 
       alert("Admin account created successfully. Please login.");
       navigate("/login", { replace: true });
     } catch (err) {
       console.log("SIGNUP ERROR:", err);
-      setError(err.message || "Signup failed. Please try again.");
+      setError(err.message || "Signup failed. Try again.");
     } finally {
       setLoading(false);
     }
@@ -118,7 +111,6 @@ export default function Signup() {
           </div>
 
           <h1 className="auth-title">Create account</h1>
-
           <p className="auth-subtitle">
             Build your school workspace and manage everything easily.
           </p>
@@ -138,7 +130,6 @@ export default function Signup() {
                 value={form.name}
                 onChange={handleChange}
                 autoComplete="name"
-                disabled={loading}
                 required
               />
             </div>
@@ -153,7 +144,6 @@ export default function Signup() {
                 value={form.email}
                 onChange={handleChange}
                 autoComplete="email"
-                disabled={loading}
                 required
               />
             </div>
@@ -170,15 +160,13 @@ export default function Signup() {
                   value={form.password}
                   onChange={handleChange}
                   autoComplete="new-password"
-                  disabled={loading}
                   required
                 />
 
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowPassword((value) => !value)}
-                  disabled={loading}
+                  onClick={() => setShowPassword((prev) => !prev)}
                 >
                   {showPassword ? "Hide" : "Show"}
                 </button>
@@ -197,15 +185,13 @@ export default function Signup() {
                   value={form.confirmPassword}
                   onChange={handleChange}
                   autoComplete="new-password"
-                  disabled={loading}
                   required
                 />
 
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowConfirmPassword((value) => !value)}
-                  disabled={loading}
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
                 >
                   {showConfirmPassword ? "Hide" : "Show"}
                 </button>
@@ -214,7 +200,6 @@ export default function Signup() {
 
             <div className="auth-form-group">
               <label>School Name</label>
-
               <input
                 className="auth-input"
                 type="text"
@@ -222,7 +207,6 @@ export default function Signup() {
                 placeholder="Enter school name"
                 value={form.schoolName}
                 onChange={handleChange}
-                disabled={loading}
                 required
               />
             </div>
