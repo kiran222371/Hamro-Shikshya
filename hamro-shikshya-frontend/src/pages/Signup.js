@@ -3,99 +3,267 @@ import { Link, useNavigate } from "react-router-dom";
 import { API_URL } from "../api";
 import "../styles/App.css";
 
+const initialForm = {
+  adminName: "",
+  adminEmail: "",
+  schoolName: "",
+  phone: "",
+  address: "",
+  password: "",
+  confirmPassword: "",
+};
+
+const cleanText = (value) => String(value ?? "").trim();
+
+const isValidEmail = (email) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
 export default function Signup() {
   const navigate = useNavigate();
 
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    schoolName: "",
-    role: "admin",
-  });
+  const [form, setForm] = useState(initialForm);
 
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+
   const [loading, setLoading] = useState(false);
+
   const [error, setError] = useState("");
 
-  const handleChange = (e) => {
-    setForm((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
+  const [success, setSuccess] = useState("");
+
+  const signupEndpoint = `${String(API_URL || "")
+    .replace(/\/+$/, "")}/auth/signup`;
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+
+    setForm((previousForm) => ({
+      ...previousForm,
+      [name]: value,
     }));
+
+    if (error) {
+      setError("");
+    }
+
+    if (success) {
+      setSuccess("");
+    }
   };
 
   const getErrorMessage = async (response) => {
     try {
-      const data = await response.json();
-      return data?.message || data?.error || "Signup failed. Try again.";
+      const contentType =
+        response.headers.get("content-type") || "";
+
+      if (contentType.includes("application/json")) {
+        const data = await response.json();
+
+        return (
+          data?.message ||
+          data?.error ||
+          "Unable to create the admin account."
+        );
+      }
+
+      const responseText = await response.text();
+
+      return (
+        responseText ||
+        "Unable to create the admin account."
+      );
     } catch {
-      return "Signup failed. Try again.";
+      return "Unable to create the admin account.";
     }
   };
 
-  const handleSignup = async (e) => {
-    e.preventDefault();
-    setError("");
+  const validateForm = () => {
+    const adminName = cleanText(form.adminName);
 
-    const name = form.name.trim();
-    const email = form.email.trim().toLowerCase();
-    const schoolName = form.schoolName.trim();
-    const password = form.password;
-    const confirmPassword = form.confirmPassword;
+    const adminEmail = cleanText(
+      form.adminEmail
+    ).toLowerCase();
 
-    if (!name || !email || !password || !confirmPassword || !schoolName) {
-      setError("Please fill in all fields.");
-      return;
+    const schoolName = cleanText(form.schoolName);
+
+    const password = String(form.password || "");
+
+    const confirmPassword = String(
+      form.confirmPassword || ""
+    );
+
+    if (!adminName) {
+      return "Please enter the administrator's full name.";
+    }
+
+    if (adminName.length < 2) {
+      return "Administrator name must contain at least 2 characters.";
+    }
+
+    if (!adminEmail) {
+      return "Please enter the administrator's email address.";
+    }
+
+    if (!isValidEmail(adminEmail)) {
+      return "Please enter a valid email address.";
+    }
+
+    if (!schoolName) {
+      return "Please enter the school or college name.";
+    }
+
+    if (schoolName.length < 2) {
+      return "School or college name must contain at least 2 characters.";
+    }
+
+    if (!password) {
+      return "Please enter a password.";
     }
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
+      return "Password must be at least 6 characters long.";
+    }
+
+    if (!confirmPassword) {
+      return "Please confirm the password.";
     }
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      return "Passwords do not match.";
+    }
+
+    return "";
+  };
+
+  const handleSignup = async (event) => {
+    event.preventDefault();
+
+    if (loading) {
       return;
     }
+
+    setError("");
+    setSuccess("");
+
+    const validationError = validateForm();
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const adminName = cleanText(form.adminName);
+
+    const adminEmail = cleanText(
+      form.adminEmail
+    ).toLowerCase();
+
+    const schoolName = cleanText(form.schoolName);
+
+    const phone = cleanText(form.phone);
+
+    const address = cleanText(form.address);
 
     try {
       setLoading(true);
 
-      console.log("SIGNUP API URL:", `${API_URL}/auth/signup`);
-
-      const response = await fetch(`${API_URL}/auth/signup`, {
+      const response = await fetch(signupEndpoint, {
         method: "POST",
+
         headers: {
           "Content-Type": "application/json",
         },
+
         body: JSON.stringify({
-          name,
-          fullName: name,
-          adminName: name,
-          email,
-          password,
-          schoolName,
+          /*
+            These names are included for compatibility with
+            the different names accepted by the backend.
+          */
+          name: adminName,
+          fullName: adminName,
+          adminName,
+
+          email: adminEmail,
+
+          password: form.password,
+
           role: "admin",
+
+          schoolName,
+          nameOfSchool: schoolName,
+
+          phone,
+          address,
+
+          principalName: adminName,
+
+          country: "Nepal",
         }),
       });
 
       if (!response.ok) {
-        const message = await getErrorMessage(response);
+        const message = await getErrorMessage(
+          response
+        );
+
         throw new Error(message);
       }
 
       const data = await response.json();
 
-      console.log("SIGNUP SUCCESS:", data);
+      if (!data?.user || !data?.user?.schoolId) {
+        throw new Error(
+          "The account was created, but the school information was not returned correctly."
+        );
+      }
 
-      alert("Admin account created successfully. Please login.");
-      navigate("/login", { replace: true });
-    } catch (err) {
-      console.log("SIGNUP ERROR:", err);
-      setError(err.message || "Signup failed. Try again.");
+      setSuccess(
+        `${data.user.schoolName || schoolName} has been registered successfully. You can now log in as the school administrator.`
+      );
+
+      setForm(initialForm);
+
+      window.setTimeout(() => {
+        navigate("/login", {
+          replace: true,
+
+          state: {
+            signupSuccess: true,
+
+            message:
+              "School and administrator account created successfully. Please log in.",
+
+            email: adminEmail,
+          },
+        });
+      }, 1500);
+    } catch (requestError) {
+      console.error(
+        "Admin signup error:",
+        requestError
+      );
+
+      if (
+        requestError instanceof TypeError &&
+        requestError.message
+          .toLowerCase()
+          .includes("fetch")
+      ) {
+        setError(
+          "Unable to connect to the backend. Make sure the backend is running on port 5000."
+        );
+
+        return;
+      }
+
+      setError(
+        requestError.message ||
+          "Unable to create the admin account. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -106,117 +274,270 @@ export default function Signup() {
       <div className="auth-shell">
         <section className="auth-left">
           <div className="app-brand">
-            <div className="app-brand-icon">🎓</div>
+            <div className="app-brand-icon">
+              🎓
+            </div>
+
             <span>Hamro Shikshya</span>
           </div>
 
-          <h1 className="auth-title">Create account</h1>
+          <h1 className="auth-title">
+            Register your institution
+          </h1>
+
           <p className="auth-subtitle">
-            Build your school workspace and manage everything easily.
+            Create a separate school or college workspace
+            and become its first administrator.
           </p>
 
-          <form className="auth-card" onSubmit={handleSignup}>
-            <h2 className="form-title">Sign up</h2>
+          <form
+            className="auth-card"
+            onSubmit={handleSignup}
+            noValidate
+          >
+            <h2 className="form-title">
+              Create Admin Account
+            </h2>
 
-            {error && <div className="error-box">{error}</div>}
+            <p className="auth-link-text">
+              Teachers and students will be added later
+              by this administrator.
+            </p>
+
+            {error && (
+              <div
+                className="error-box"
+                role="alert"
+              >
+                {error}
+              </div>
+            )}
+
+            {success && (
+              <div
+                className="success-box"
+                role="status"
+              >
+                {success}
+              </div>
+            )}
 
             <div className="auth-form-group">
-              <label>Full Name</label>
+              <label htmlFor="adminName">
+                Administrator Full Name
+              </label>
+
               <input
+                id="adminName"
                 className="auth-input"
                 type="text"
-                name="name"
-                placeholder="Enter full name"
-                value={form.name}
+                name="adminName"
+                placeholder="Enter administrator's full name"
+                value={form.adminName}
                 onChange={handleChange}
                 autoComplete="name"
+                disabled={loading}
+                maxLength={100}
+                autoFocus
                 required
               />
             </div>
 
             <div className="auth-form-group">
-              <label>Email</label>
+              <label htmlFor="adminEmail">
+                Administrator Email
+              </label>
+
               <input
+                id="adminEmail"
                 className="auth-input"
                 type="email"
-                name="email"
-                placeholder="Enter your email"
-                value={form.email}
+                name="adminEmail"
+                placeholder="Enter administrator's email"
+                value={form.adminEmail}
                 onChange={handleChange}
                 autoComplete="email"
+                disabled={loading}
+                maxLength={150}
+                required
+              />
+
+              <small>
+                This email will be used to log in to the
+                admin dashboard.
+              </small>
+            </div>
+
+            <div className="auth-form-group">
+              <label htmlFor="schoolName">
+                School or College Name
+              </label>
+
+              <input
+                id="schoolName"
+                className="auth-input"
+                type="text"
+                name="schoolName"
+                placeholder="Enter school or college name"
+                value={form.schoolName}
+                onChange={handleChange}
+                disabled={loading}
+                maxLength={150}
                 required
               />
             </div>
 
             <div className="auth-form-group">
-              <label>Password</label>
+              <label htmlFor="phone">
+                Institution Phone
+              </label>
+
+              <input
+                id="phone"
+                className="auth-input"
+                type="tel"
+                name="phone"
+                placeholder="Enter phone number (optional)"
+                value={form.phone}
+                onChange={handleChange}
+                autoComplete="tel"
+                disabled={loading}
+                maxLength={30}
+              />
+            </div>
+
+            <div className="auth-form-group">
+              <label htmlFor="address">
+                Institution Address
+              </label>
+
+              <input
+                id="address"
+                className="auth-input"
+                type="text"
+                name="address"
+                placeholder="Enter address (optional)"
+                value={form.address}
+                onChange={handleChange}
+                autoComplete="street-address"
+                disabled={loading}
+                maxLength={250}
+              />
+            </div>
+
+            <div className="auth-form-group">
+              <label htmlFor="password">
+                Password
+              </label>
 
               <div className="auth-password-wrap">
                 <input
+                  id="password"
                   className="auth-input password-input"
-                  type={showPassword ? "text" : "password"}
+                  type={
+                    showPassword
+                      ? "text"
+                      : "password"
+                  }
                   name="password"
-                  placeholder="Enter password"
+                  placeholder="Create a password"
                   value={form.password}
                   onChange={handleChange}
                   autoComplete="new-password"
+                  disabled={loading}
+                  minLength={6}
                   required
                 />
 
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowPassword((prev) => !prev)}
+                  onClick={() =>
+                    setShowPassword(
+                      (previousValue) =>
+                        !previousValue
+                    )
+                  }
+                  disabled={loading}
+                  aria-label={
+                    showPassword
+                      ? "Hide password"
+                      : "Show password"
+                  }
                 >
                   {showPassword ? "Hide" : "Show"}
                 </button>
               </div>
+
+              <small>
+                Password must contain at least 6
+                characters.
+              </small>
             </div>
 
             <div className="auth-form-group">
-              <label>Confirm Password</label>
+              <label htmlFor="confirmPassword">
+                Confirm Password
+              </label>
 
               <div className="auth-password-wrap">
                 <input
+                  id="confirmPassword"
                   className="auth-input password-input"
-                  type={showConfirmPassword ? "text" : "password"}
+                  type={
+                    showConfirmPassword
+                      ? "text"
+                      : "password"
+                  }
                   name="confirmPassword"
-                  placeholder="Confirm password"
+                  placeholder="Enter the password again"
                   value={form.confirmPassword}
                   onChange={handleChange}
                   autoComplete="new-password"
+                  disabled={loading}
+                  minLength={6}
                   required
                 />
 
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  onClick={() =>
+                    setShowConfirmPassword(
+                      (previousValue) =>
+                        !previousValue
+                    )
+                  }
+                  disabled={loading}
+                  aria-label={
+                    showConfirmPassword
+                      ? "Hide confirmed password"
+                      : "Show confirmed password"
+                  }
                 >
-                  {showConfirmPassword ? "Hide" : "Show"}
+                  {showConfirmPassword
+                    ? "Hide"
+                    : "Show"}
                 </button>
               </div>
             </div>
 
-            <div className="auth-form-group">
-              <label>School Name</label>
-              <input
-                className="auth-input"
-                type="text"
-                name="schoolName"
-                placeholder="Enter school name"
-                value={form.schoolName}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <button className="auth-button" type="submit" disabled={loading}>
-              {loading ? "Creating..." : "Continue"}
+            <button
+              className="auth-button"
+              type="submit"
+              disabled={loading}
+            >
+              {loading
+                ? "Creating institution..."
+                : "Create Admin Account"}
             </button>
 
             <p className="auth-link-text">
-              Already have an account? <Link to="/login">Log in</Link>
+              Already registered?{" "}
+
+              <Link to="/login">
+                Log in
+              </Link>
             </p>
           </form>
         </section>
@@ -224,27 +545,32 @@ export default function Signup() {
         <section className="auth-right">
           <div>
             <p className="showcase-topline">
-              Everything you need to stay on track.
+              One platform for every institution.
             </p>
 
             <h2 className="showcase-title">
-              Create your school space and manage classes, tasks, exams, and
-              student records in one place.
+              Each school or college receives its own
+              protected workspace, administrator,
+              teachers, students and academic records.
             </h2>
           </div>
 
           <div className="showcase-center">
-            <div className="showcase-badge">📘</div>
+            <div className="showcase-badge">
+              🏫
+            </div>
           </div>
 
           <div className="showcase-footer">
-            <strong>Designed for modern school management</strong>
+            <strong>
+              Designed for Nepal's education system
+            </strong>
 
             <div className="brand-row">
               <span>Schools</span>
+              <span>Colleges</span>
               <span>Teachers</span>
               <span>Students</span>
-              <span>Reports</span>
             </div>
           </div>
         </section>

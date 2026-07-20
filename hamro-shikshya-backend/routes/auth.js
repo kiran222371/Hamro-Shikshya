@@ -6,19 +6,23 @@ import School from "../models/School.js";
 
 const router = express.Router();
 
-const cleanText = (value) => String(value || "").trim();
+/* =====================================================
+   HELPER FUNCTIONS
+===================================================== */
+
+const cleanText = (value) => String(value ?? "").trim();
 
 const cleanEmail = (value) => cleanText(value).toLowerCase();
 
-const normalizeRole = (role) => {
-  const cleanedRole = cleanText(role).toLowerCase();
+const isValidEmail = (email) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
 
-  if (cleanedRole === "principal") return "admin";
-  if (cleanedRole === "admin") return "admin";
-  if (cleanedRole === "teacher") return "teacher";
-  if (cleanedRole === "student") return "student";
+const getSchoolIdValue = (schoolId) => {
+  if (!schoolId) return null;
 
-  return "admin";
+  // Handles both a normal ObjectId and a populated School document
+  return schoolId._id || schoolId;
 };
 
 const getValidCoordinates = (body = {}) => {
@@ -36,44 +40,100 @@ const getValidCoordinates = (body = {}) => {
     body.addressDetails?.lat ??
     body.location?.coordinates?.[1];
 
-  const lngNumber = Number(longitude);
-  const latNumber = Number(latitude);
+  const longitudeNumber = Number(longitude);
+  const latitudeNumber = Number(latitude);
 
-  if (!Number.isFinite(lngNumber) || !Number.isFinite(latNumber)) {
+  if (
+    !Number.isFinite(longitudeNumber) ||
+    !Number.isFinite(latitudeNumber)
+  ) {
     return null;
   }
 
-  return [lngNumber, latNumber];
+  if (
+    longitudeNumber < -180 ||
+    longitudeNumber > 180 ||
+    latitudeNumber < -90 ||
+    latitudeNumber > 90
+  ) {
+    return null;
+  }
+
+  return [longitudeNumber, latitudeNumber];
 };
 
 const createToken = (user) => {
+  const jwtSecret =
+    process.env.JWT_SECRET || "hamro-shikshya-secret-key";
+
   return jwt.sign(
     {
-      id: user._id,
+      id: user._id.toString(),
       role: user.role,
-      schoolId: user.schoolId,
+      schoolId: getSchoolIdValue(user.schoolId)?.toString() || null,
     },
-    process.env.JWT_SECRET || "hamro-shikshya-secret-key",
-    { expiresIn: "7d" }
+    jwtSecret,
+    {
+      expiresIn: "7d",
+    }
   );
 };
 
-// ===============================
-// SIGNUP - CREATE SCHOOL + ADMIN
-// ===============================
+/* =====================================================
+   SIGNUP
+   Creates a new school/college and its first admin
+===================================================== */
+
 router.post("/signup", async (req, res) => {
+  let createdSchool = null;
+
   try {
     const body = req.body || {};
 
-    const name = cleanText(body.name || body.fullName || body.adminName);
+    const name = cleanText(
+      body.name ||
+        body.fullName ||
+        body.adminName
+    );
+
     const email = cleanEmail(body.email);
     const password = String(body.password || "");
-    const role = normalizeRole(body.role);
-    const schoolName = cleanText(body.schoolName || body.nameOfSchool);
 
-    if (!name || !email || !password || !schoolName) {
+    const schoolName = cleanText(
+      body.schoolName ||
+        body.nameOfSchool ||
+        body.institutionName
+    );
+
+    const requestedRole = cleanText(
+      body.role || "admin"
+    ).toLowerCase();
+
+    /* -----------------------------
+       Required-field validation
+    ----------------------------- */
+
+    if (!name) {
       return res.status(400).json({
-        message: "Name, email, password and school name are required",
+        message: "Admin name is required",
+      });
+    }
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Admin email is required",
+      });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        message: "Please enter a valid email address",
+      });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        message: "Password is required",
       });
     }
 
@@ -83,76 +143,156 @@ router.post("/signup", async (req, res) => {
       });
     }
 
-    if (role !== "admin") {
+    if (!schoolName) {
       return res.status(400).json({
-        message:
-          "Only admin accounts can be created from signup. Teachers and students must be added by the school admin.",
+        message: "School or college name is required",
       });
     }
 
-    const existingUser = await User.findOne({ email });
+    /*
+      Public signup is only for creating the first admin.
+
+      Teachers and students must be created later by that
+      school's authenticated admin.
+    */
+    if (
+      requestedRole !== "admin" &&
+      requestedRole !== "principal"
+    ) {
+      return res.status(400).json({
+        message:
+          "Only school admin accounts can be created through public signup. Teachers and students must be created by their school admin.",
+      });
+    }
+
+    /* -----------------------------
+       Check existing account
+    ----------------------------- */
+
+    const existingUser = await User.findOne({ email })
+      .select("_id email")
+      .lean();
 
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         message: "An account already exists with this email",
       });
     }
 
+    /* -----------------------------
+       Prepare school address
+    ----------------------------- */
+
+    const latitudeValue =
+      body.latitude ??
+      body.lat ??
+      body.addressDetails?.latitude ??
+      body.addressDetails?.lat ??
+      null;
+
+    const longitudeValue =
+      body.longitude ??
+      body.lng ??
+      body.addressDetails?.longitude ??
+      body.addressDetails?.lng ??
+      null;
+
+    const latitudeNumber =
+      latitudeValue !== null && latitudeValue !== ""
+        ? Number(latitudeValue)
+        : null;
+
+    const longitudeNumber =
+      longitudeValue !== null && longitudeValue !== ""
+        ? Number(longitudeValue)
+        : null;
+
     const addressDetails = {
       formattedAddress: cleanText(
-        body.formattedAddress || body.addressDetails?.formattedAddress
+        body.formattedAddress ||
+          body.addressDetails?.formattedAddress
       ),
 
       addressLine1: cleanText(
-        body.addressLine1 || body.address || body.addressDetails?.addressLine1
+        body.addressLine1 ||
+          body.address ||
+          body.addressDetails?.addressLine1
       ),
 
       municipality: cleanText(
-        body.municipality || body.addressDetails?.municipality
+        body.municipality ||
+          body.addressDetails?.municipality
       ),
 
-      district: cleanText(body.district || body.addressDetails?.district),
+      district: cleanText(
+        body.district ||
+          body.addressDetails?.district
+      ),
 
-      province: cleanText(body.province || body.addressDetails?.province),
+      province: cleanText(
+        body.province ||
+          body.addressDetails?.province
+      ),
 
       country:
-        cleanText(body.country || body.addressDetails?.country) || "Nepal",
+        cleanText(
+          body.country ||
+            body.addressDetails?.country
+        ) || "Nepal",
 
       postalCode: cleanText(
-        body.postalCode || body.addressDetails?.postalCode
+        body.postalCode ||
+          body.addressDetails?.postalCode
       ),
 
-      placeId: cleanText(body.placeId || body.addressDetails?.placeId),
+      placeId: cleanText(
+        body.placeId ||
+          body.addressDetails?.placeId
+      ),
 
-      latitude:
-        body.latitude ??
-        body.lat ??
-        body.addressDetails?.latitude ??
-        null,
+      latitude: Number.isFinite(latitudeNumber)
+        ? latitudeNumber
+        : null,
 
-      longitude:
-        body.longitude ??
-        body.lng ??
-        body.addressDetails?.longitude ??
-        null,
+      longitude: Number.isFinite(longitudeNumber)
+        ? longitudeNumber
+        : null,
     };
 
     const coordinates = getValidCoordinates(body);
 
     const schoolPayload = {
       schoolName,
+
       address: cleanText(
         body.address ||
           addressDetails.formattedAddress ||
           addressDetails.addressLine1
       ),
+
       addressDetails,
+
       phone: cleanText(body.phone),
-      email,
+
+      /*
+        This is the institution contact email.
+        It initially uses the admin's email when a separate
+        schoolEmail has not been provided.
+      */
+      email: cleanEmail(
+        body.schoolEmail || body.institutionEmail || email
+      ),
+
       website: cleanText(body.website),
-      principalName: cleanText(body.principalName),
+
+      principalName: cleanText(
+        body.principalName || name
+      ),
+
       adminName: name,
+
       logoUrl: cleanText(body.logoUrl),
+
       isActive: true,
     };
 
@@ -163,81 +303,185 @@ router.post("/signup", async (req, res) => {
       };
     }
 
-    const school = await School.create(schoolPayload);
+    /* -----------------------------
+       Hash password before creating
+       database records
+    ----------------------------- */
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = await User.create({
-      name,
-      email,
-      password: hashedPassword,
-      role: "admin",
-      schoolId: school._id,
-      accountStatus: "active",
-      isActive: true,
-    });
+    /* -----------------------------
+       Create the school
+    ----------------------------- */
 
-    const token = createToken(user);
+    createdSchool = await School.create(schoolPayload);
+
+    /* -----------------------------
+       Create the school's first admin
+    ----------------------------- */
+
+    let adminUser;
+
+    try {
+      adminUser = await User.create({
+        name,
+        email,
+        password: hashedPassword,
+        role: "admin",
+        schoolId: createdSchool._id,
+        accountStatus: "active",
+        isActive: true,
+      });
+    } catch (userCreationError) {
+      /*
+        If admin creation fails, remove the school that was
+        just created. This prevents empty/orphan schools.
+      */
+      await School.findByIdAndDelete(createdSchool._id).catch(
+        (cleanupError) => {
+          console.error(
+            "Failed to remove school after admin creation error:",
+            cleanupError
+          );
+        }
+      );
+
+      createdSchool = null;
+
+      throw userCreationError;
+    }
+
+    const token = createToken(adminUser);
 
     return res.status(201).json({
-      message: "Admin account created successfully",
+      message:
+        "School and admin account created successfully",
+
       token,
+
       user: {
-        _id: user._id,
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        schoolId: school._id,
-        schoolName: school.schoolName,
+        _id: adminUser._id,
+        id: adminUser._id,
+        name: adminUser.name,
+        email: adminUser.email,
+        role: adminUser.role,
+        schoolId: createdSchool._id,
+        schoolName: createdSchool.schoolName,
+        accountStatus:
+          adminUser.accountStatus || "active",
+        isActive: adminUser.isActive !== false,
+      },
+
+      school: {
+        _id: createdSchool._id,
+        id: createdSchool._id,
+        schoolName: createdSchool.schoolName,
+        address: createdSchool.address || "",
+        phone: createdSchool.phone || "",
+        email: createdSchool.email || "",
       },
     });
-  } catch (err) {
-    console.error("Signup error:", err);
+  } catch (error) {
+    console.error("Signup error:", error);
 
-    if (err.code === 11000) {
-      if (err.keyPattern?.email || err.keyValue?.email) {
-        return res.status(400).json({
-          message: "An account already exists with this email",
+    /*
+      Extra cleanup protection. Normally cleanup happens in
+      the inner catch, but this protects against other errors.
+    */
+    if (createdSchool?._id) {
+      const adminForSchool = await User.findOne({
+        schoolId: createdSchool._id,
+        role: "admin",
+      })
+        .select("_id")
+        .lean()
+        .catch(() => null);
+
+      if (!adminForSchool) {
+        await School.findByIdAndDelete(
+          createdSchool._id
+        ).catch((cleanupError) => {
+          console.error(
+            "School cleanup error:",
+            cleanupError
+          );
         });
       }
+    }
 
-      if (err.keyPattern?.name || err.keyValue?.name !== undefined) {
-        return res.status(400).json({
+    /* -----------------------------
+       MongoDB duplicate errors
+    ----------------------------- */
+
+    if (error.code === 11000) {
+      const duplicateField =
+        Object.keys(error.keyPattern || {})[0] ||
+        Object.keys(error.keyValue || {})[0] ||
+        "";
+
+      if (duplicateField === "email") {
+        return res.status(409).json({
           message:
-            "Old MongoDB index name_1 is still blocking signup. Delete name_1 from the schools collection indexes in MongoDB Atlas.",
+            "An account already exists with this email",
         });
       }
 
-      if (err.keyPattern?.schoolName || err.keyValue?.schoolName) {
-        return res.status(400).json({
+      if (
+        duplicateField === "name" ||
+        error.keyValue?.name !== undefined
+      ) {
+        return res.status(409).json({
           message:
-            "This school name already exists because schoolName has a unique index. Remove the unique index or use another school name.",
+            "An old MongoDB index called name_1 is blocking school registration. Delete the name_1 index from the schools collection in MongoDB Atlas.",
         });
       }
 
-      return res.status(400).json({
-        message: "Duplicate record found. Please use different details.",
+      if (
+        duplicateField === "schoolName" ||
+        error.keyValue?.schoolName !== undefined
+      ) {
+        return res.status(409).json({
+          message:
+            "This school name is currently blocked by a unique MongoDB index. Remove the unique schoolName index so institutions with similar names can register.",
+        });
+      }
+
+      return res.status(409).json({
+        message:
+          "A record with these details already exists",
       });
     }
 
-    if (err.name === "ValidationError") {
+    /* -----------------------------
+       Mongoose validation errors
+    ----------------------------- */
+
+    if (error.name === "ValidationError") {
+      const validationMessages = Object.values(
+        error.errors || {}
+      )
+        .map((item) => item.message)
+        .filter(Boolean);
+
       return res.status(400).json({
-        message: Object.values(err.errors)
-          .map((item) => item.message)
-          .join(", "),
+        message:
+          validationMessages.join(", ") ||
+          "Please check the information and try again",
       });
     }
 
     return res.status(500).json({
-      message: err.message || "Signup failed",
+      message:
+        error.message ||
+        "Unable to create the school admin account",
     });
   }
 });
 
-// ===============================
-// LOGIN
-// ===============================
+/* =====================================================
+   LOGIN
+===================================================== */
+
 router.post("/login", async (req, res) => {
   try {
     const email = cleanEmail(req.body?.email);
@@ -249,35 +493,59 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        message: "Please enter a valid email address",
+      });
+    }
+
     const user = await User.findOne({ email }).populate(
       "schoolId",
-      "schoolName"
+      "schoolName address phone email isActive"
     );
 
     if (!user) {
-      return res.status(404).json({
-        message: "User not found",
+      return res.status(401).json({
+        message: "Invalid email or password",
       });
     }
 
     if (!user.password) {
       return res.status(400).json({
         message:
-          "This account has no password saved. Please delete this old user from MongoDB and create the account again.",
+          "This account does not have a password. Please contact the school administrator.",
       });
     }
 
-    if (user.accountStatus === "deactivated" || user.isActive === false) {
+    if (
+      user.accountStatus === "deactivated" ||
+      user.accountStatus === "inactive" ||
+      user.isActive === false
+    ) {
       return res.status(403).json({
-        message: "This account has been deactivated",
+        message:
+          "This account has been deactivated. Please contact your school administrator.",
       });
     }
 
-    const isPasswordCorrect = await bcrypt.compare(password, user.password);
+    if (
+      user.schoolId &&
+      user.schoolId.isActive === false
+    ) {
+      return res.status(403).json({
+        message:
+          "This school account has been deactivated",
+      });
+    }
+
+    const isPasswordCorrect = await bcrypt.compare(
+      password,
+      user.password
+    );
 
     if (!isPasswordCorrect) {
-      return res.status(400).json({
-        message: "Invalid password",
+      return res.status(401).json({
+        message: "Invalid email or password",
       });
     }
 
@@ -286,28 +554,44 @@ router.post("/login", async (req, res) => {
 
     const token = createToken(user);
 
+    const schoolId = getSchoolIdValue(user.schoolId);
+
     return res.status(200).json({
       message: "Login successful",
+
       token,
+
       user: {
         _id: user._id,
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        schoolId: user.schoolId?._id || user.schoolId,
-        schoolName: user.schoolId?.schoolName || "",
+
+        schoolId: schoolId || null,
+
+        schoolName:
+          user.schoolId?.schoolName || "",
+
         className: user.className || "",
         section: user.section || "",
-        accountStatus: user.accountStatus || "active",
+
+        assignedClasses:
+          user.assignedClasses || [],
+
+        accountStatus:
+          user.accountStatus || "active",
+
         isActive: user.isActive !== false,
       },
     });
-  } catch (err) {
-    console.error("Login error:", err);
+  } catch (error) {
+    console.error("Login error:", error);
 
     return res.status(500).json({
-      message: err.message || "Login failed",
+      message:
+        error.message ||
+        "Unable to log in. Please try again.",
     });
   }
 });

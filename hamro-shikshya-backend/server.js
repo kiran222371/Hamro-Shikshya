@@ -15,52 +15,100 @@ import noticeRoutes from "./routes/notice.js";
 import subjectRoutes from "./routes/subjects.js";
 import schoolRoutes from "./routes/school.js";
 
+import School from "./models/School.js";
+
 dotenv.config();
 
 const app = express();
 
-// ================= ES MODULE __dirname FIX =================
+app.disable("x-powered-by");
+
+/* =====================================================
+   ES MODULE __dirname FIX
+===================================================== */
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ================= UPLOAD FOLDERS =================
+/* =====================================================
+   UPLOAD FOLDERS
+===================================================== */
+
 const serverUploadsDir = path.join(__dirname, "uploads");
 const rootUploadsDir = path.join(process.cwd(), "uploads");
 
 const ensureFolderExists = (folderPath) => {
   if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
+    fs.mkdirSync(folderPath, {
+      recursive: true,
+    });
   }
 };
 
 ensureFolderExists(serverUploadsDir);
 ensureFolderExists(rootUploadsDir);
 
-// ================= MIDDLEWARE =================
+/* =====================================================
+   MIDDLEWARE
+===================================================== */
+
 app.use(
   cors({
     origin: true,
     credentials: true,
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
   })
 );
 
 app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// ================= HELPERS =================
-const cleanText = (value) => String(value || "").trim();
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "50mb",
+  })
+);
+
+/* =====================================================
+   GENERAL HELPERS
+===================================================== */
+
+const cleanText = (value) =>
+  String(value ?? "").trim();
 
 const escapeRegExp = (value) =>
-  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  String(value ?? "").replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"
+  );
 
-const getToday = () => new Date().toISOString().slice(0, 10);
+const getToday = () =>
+  new Date().toISOString().slice(0, 10);
 
 const getCollection = (collectionName) => {
-  if (!mongoose.connection || mongoose.connection.readyState !== 1) {
-    throw new Error("MongoDB is not connected yet.");
+  if (
+    !mongoose.connection ||
+    mongoose.connection.readyState !== 1
+  ) {
+    throw new Error(
+      "MongoDB is not connected yet."
+    );
   }
 
-  return mongoose.connection.db.collection(collectionName);
+  return mongoose.connection.db.collection(
+    collectionName
+  );
 };
 
 const makeTextMatch = (field, value) => ({
@@ -70,7 +118,55 @@ const makeTextMatch = (field, value) => ({
   },
 });
 
-const buildClassFilter = (className, section = "", schoolId = "") => {
+const getObjectIdValue = (value) => {
+  const cleanedValue = cleanText(value);
+
+  if (
+    cleanedValue &&
+    mongoose.Types.ObjectId.isValid(cleanedValue)
+  ) {
+    return new mongoose.Types.ObjectId(
+      cleanedValue
+    );
+  }
+
+  return null;
+};
+
+/*
+  This allows older dashboard records that saved schoolId
+  as a string and newer records that use MongoDB ObjectId.
+*/
+const buildSchoolIdConditions = (schoolId) => {
+  const cleanedSchoolId = cleanText(schoolId);
+
+  if (!cleanedSchoolId) {
+    return [];
+  }
+
+  const conditions = [
+    { schoolId: cleanedSchoolId },
+    { "school._id": cleanedSchoolId },
+    { "school.id": cleanedSchoolId },
+  ];
+
+  const objectId = getObjectIdValue(cleanedSchoolId);
+
+  if (objectId) {
+    conditions.push(
+      { schoolId: objectId },
+      { "school._id": objectId }
+    );
+  }
+
+  return conditions;
+};
+
+const buildClassFilter = (
+  className,
+  section = "",
+  schoolId = ""
+) => {
   const cleanClassName = cleanText(className);
   const cleanSection = cleanText(section);
   const cleanSchoolId = cleanText(schoolId);
@@ -79,9 +175,13 @@ const buildClassFilter = (className, section = "", schoolId = "") => {
 
   if (cleanClassName) {
     const classConditions = [
-      makeTextMatch("className", cleanClassName),
+      makeTextMatch(
+        "className",
+        cleanClassName
+      ),
       makeTextMatch("class", cleanClassName),
       makeTextMatch("grade", cleanClassName),
+
       { className: cleanClassName },
       { class: cleanClassName },
       { grade: cleanClassName },
@@ -97,14 +197,26 @@ const buildClassFilter = (className, section = "", schoolId = "") => {
       );
     }
 
-    andConditions.push({ $or: classConditions });
+    andConditions.push({
+      $or: classConditions,
+    });
   }
 
-  if (cleanSection && cleanSection.toLowerCase() !== "all") {
+  if (
+    cleanSection &&
+    cleanSection.toLowerCase() !== "all"
+  ) {
     andConditions.push({
       $or: [
-        makeTextMatch("section", cleanSection),
-        makeTextMatch("classSection", cleanSection),
+        makeTextMatch(
+          "section",
+          cleanSection
+        ),
+        makeTextMatch(
+          "classSection",
+          cleanSection
+        ),
+
         { section: cleanSection },
         { classSection: cleanSection },
       ],
@@ -113,11 +225,9 @@ const buildClassFilter = (className, section = "", schoolId = "") => {
 
   if (cleanSchoolId) {
     andConditions.push({
-      $or: [
-        { schoolId: cleanSchoolId },
-        { "school._id": cleanSchoolId },
-        { "school.id": cleanSchoolId },
-      ],
+      $or: buildSchoolIdConditions(
+        cleanSchoolId
+      ),
     });
   }
 
@@ -125,10 +235,16 @@ const buildClassFilter = (className, section = "", schoolId = "") => {
     return {};
   }
 
-  return { $and: andConditions };
+  return {
+    $and: andConditions,
+  };
 };
 
-const sendServerError = (res, error, fallbackMessage) => {
+const sendServerError = (
+  res,
+  error,
+  fallbackMessage
+) => {
   console.error(fallbackMessage, error);
 
   return res.status(500).json({
@@ -138,21 +254,136 @@ const sendServerError = (res, error, fallbackMessage) => {
   });
 };
 
-// ================= SAFE FILE PATH HELPER =================
-const getSafeUploadPath = (baseDir, requestedFile) => {
-  const cleanFile = String(requestedFile || "")
+/* =====================================================
+   REPAIR OLD SCHOOL DATABASE INDEXES
+===================================================== */
+
+/*
+  Older versions of the application may have created
+  unique indexes such as:
+
+  name_1
+  schoolName_1
+  email_1
+
+  A unique school-name index would stop another school or
+  branch with a similar name from registering.
+
+  The User email remains unique, but School name and School
+  contact email must not be globally unique.
+*/
+const repairLegacySchoolIndexes = async () => {
+  const schoolCollection =
+    mongoose.connection.db.collection(
+      "schools"
+    );
+
+  let indexes = [];
+
+  try {
+    indexes =
+      await schoolCollection.indexes();
+  } catch (error) {
+    /*
+      Code 26 means the schools collection does not exist
+      yet. This is normal for a completely new database.
+    */
+    if (
+      error.code !== 26 &&
+      error.codeName !== "NamespaceNotFound"
+    ) {
+      throw error;
+    }
+  }
+
+  const fieldsThatMustNotBeUnique = new Set([
+    "name",
+    "schoolName",
+    "email",
+  ]);
+
+  for (const index of indexes) {
+    if (
+      index.name === "_id_" ||
+      index.unique !== true
+    ) {
+      continue;
+    }
+
+    const indexedFields = Object.keys(
+      index.key || {}
+    );
+
+    const shouldRemoveIndex =
+      indexedFields.some((field) =>
+        fieldsThatMustNotBeUnique.has(field)
+      );
+
+    if (!shouldRemoveIndex) {
+      continue;
+    }
+
+    try {
+      await schoolCollection.dropIndex(
+        index.name
+      );
+
+      console.log(
+        `✅ Removed old unique school index: ${index.name}`
+      );
+    } catch (error) {
+      if (
+        error.code !== 27 &&
+        error.codeName !== "IndexNotFound"
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  /*
+    Create all indexes currently defined in School.js.
+
+    These indexes improve searching but are not unique.
+  */
+  await School.createIndexes();
+
+  console.log(
+    "✅ School indexes checked and repaired"
+  );
+};
+
+/* =====================================================
+   SAFE FILE PATH HELPER
+===================================================== */
+
+const getSafeUploadPath = (
+  baseDir,
+  requestedFile
+) => {
+  const cleanFile = String(
+    requestedFile || ""
+  )
     .trim()
     .replace(/^\/?uploads\/?/, "")
     .replace(/\\/g, "/");
 
-  if (!cleanFile) return null;
+  if (!cleanFile) {
+    return null;
+  }
 
   const resolvedBase = path.resolve(baseDir);
-  const resolvedFile = path.resolve(resolvedBase, cleanFile);
+
+  const resolvedFile = path.resolve(
+    resolvedBase,
+    cleanFile
+  );
 
   if (
     resolvedFile !== resolvedBase &&
-    !resolvedFile.startsWith(resolvedBase + path.sep)
+    !resolvedFile.startsWith(
+      resolvedBase + path.sep
+    )
   ) {
     return null;
   }
@@ -163,10 +394,15 @@ const getSafeUploadPath = (baseDir, requestedFile) => {
   };
 };
 
-// ================= FILE DOWNLOAD ROUTE =================
+/* =====================================================
+   FILE DOWNLOAD ROUTE
+===================================================== */
+
 app.get("/uploads/download", (req, res) => {
   try {
-    const requestedFile = String(req.query.file || "").trim();
+    const requestedFile = String(
+      req.query.file || ""
+    ).trim();
 
     if (!requestedFile) {
       return res.status(400).json({
@@ -175,14 +411,23 @@ app.get("/uploads/download", (req, res) => {
       });
     }
 
-    const possibleFolders = [serverUploadsDir, rootUploadsDir];
+    const possibleFolders = [
+      serverUploadsDir,
+      rootUploadsDir,
+    ];
 
     let foundFile = null;
 
     for (const folder of possibleFolders) {
-      const safePath = getSafeUploadPath(folder, requestedFile);
+      const safePath = getSafeUploadPath(
+        folder,
+        requestedFile
+      );
 
-      if (safePath && fs.existsSync(safePath.filePath)) {
+      if (
+        safePath &&
+        fs.existsSync(safePath.filePath)
+      ) {
         foundFile = safePath;
         break;
       }
@@ -196,9 +441,15 @@ app.get("/uploads/download", (req, res) => {
       });
     }
 
-    return res.download(foundFile.filePath, path.basename(foundFile.filePath));
+    return res.download(
+      foundFile.filePath,
+      path.basename(foundFile.filePath)
+    );
   } catch (error) {
-    console.error("Download file error:", error);
+    console.error(
+      "Download file error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -207,13 +458,23 @@ app.get("/uploads/download", (req, res) => {
   }
 });
 
-// ================= SERVE UPLOADED FILES =================
+/* =====================================================
+   SERVE UPLOADED FILES
+===================================================== */
+
 app.use(
   "/uploads",
   express.static(serverUploadsDir, {
     setHeaders: (res) => {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader(
+        "Access-Control-Allow-Origin",
+        "*"
+      );
+
+      res.setHeader(
+        "Cross-Origin-Resource-Policy",
+        "cross-origin"
+      );
     },
   })
 );
@@ -222,15 +483,27 @@ app.use(
   "/uploads",
   express.static(rootUploadsDir, {
     setHeaders: (res) => {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader(
+        "Access-Control-Allow-Origin",
+        "*"
+      );
+
+      res.setHeader(
+        "Cross-Origin-Resource-Policy",
+        "cross-origin"
+      );
     },
   })
 );
 
-// ================= TEST ROUTES =================
+/* =====================================================
+   TEST ROUTES
+===================================================== */
+
 app.get("/", (req, res) => {
-  res.send("Hamro Shikshya backend is running");
+  res.send(
+    "Hamro Shikshya backend is running"
+  );
 });
 
 app.get("/api/health", (req, res) => {
@@ -238,156 +511,297 @@ app.get("/api/health", (req, res) => {
     success: true,
     message: "API is running",
     app: "Hamro Shikshya",
+    database:
+      mongoose.connection.readyState === 1
+        ? "connected"
+        : "disconnected",
     time: new Date().toISOString(),
   });
 });
 
-// ================= DIRECT TEACHER DASHBOARD ROUTES =================
-// These routes make TeacherDashboard real-functional even if old route files are incomplete.
+/* =====================================================
+   DIRECT TEACHER DASHBOARD ROUTES
+===================================================== */
+
+/*
+  These routes keep TeacherDashboard functional even when
+  older individual route files are incomplete.
+*/
 
 const registerTeacherDashboardRoutes = () => {
-  // ---------- ATTENDANCE ----------
-  app.post(["/api/attendance/mark", "/api/attendance/create"], async (req, res) => {
-    try {
-      const body = req.body || {};
+  /* ---------------------------------------------------
+     ATTENDANCE
+  --------------------------------------------------- */
 
-      const studentId = cleanText(body.studentId || body.student);
-      const studentName = cleanText(body.studentName || body.name);
-      const className = cleanText(body.className || body.class);
-      const section = cleanText(body.section);
-      const status = cleanText(body.status) || "Present";
-      const date = cleanText(body.date) || getToday();
-      const schoolId = cleanText(body.schoolId);
-      const teacherId = cleanText(body.teacherId || body.markedBy);
-      const classId = cleanText(body.classId);
-
-      if (!studentId) {
-        return res.status(400).json({
-          success: false,
-          message: "studentId is required.",
-        });
-      }
-
-      if (!className) {
-        return res.status(400).json({
-          success: false,
-          message: "className is required.",
-        });
-      }
-
-      const attendance = {
-        studentId,
-        studentName,
-        classId,
-        className,
-        section,
-        status,
-        date,
-        schoolId,
-        teacherId,
-        markedBy: teacherId,
-        updatedAt: new Date(),
-      };
-
-      const filter = {
-        studentId,
-        className,
-        section,
-        date,
-        ...(schoolId ? { schoolId } : {}),
-      };
-
-      const collection = getCollection("attendances");
-
-      const result = await collection.findOneAndUpdate(
-        filter,
-        {
-          $set: attendance,
-          $setOnInsert: {
-            createdAt: new Date(),
-          },
-        },
-        {
-          upsert: true,
-          returnDocument: "after",
-        }
-      );
-
-      const savedAttendance = result.value || {
-        _id: result.upsertedId,
-        ...attendance,
-      };
-
-      return res.status(201).json({
-        success: true,
-        message: "Attendance saved successfully.",
-        data: savedAttendance,
-        attendance: savedAttendance,
-      });
-    } catch (error) {
-      return sendServerError(res, error, "Failed to save attendance.");
-    }
-  });
-
-  app.get("/api/attendance/class/:className", async (req, res) => {
-    try {
-      const className = req.params.className;
-      const section = req.query.section || "";
-      const schoolId = req.query.schoolId || "";
-
-      const filter = buildClassFilter(className, section, schoolId);
-
-      const records = await getCollection("attendances")
-        .find(filter)
-        .sort({ date: -1, createdAt: -1 })
-        .toArray();
-
-      return res.json({
-        success: true,
-        data: records,
-        attendance: records,
-        records,
-      });
-    } catch (error) {
-      return sendServerError(res, error, "Failed to load attendance records.");
-    }
-  });
-
-  // ---------- EXAMS ----------
   app.post(
-    ["/api/exams/create", "/api/exam/create", "/api/exams", "/api/exam"],
+    [
+      "/api/attendance/mark",
+      "/api/attendance/create",
+    ],
     async (req, res) => {
       try {
         const body = req.body || {};
 
-        const title = cleanText(body.title || body.examTitle);
-        const subject = cleanText(body.subject);
-        const className = cleanText(body.className || body.class);
-        const section = cleanText(body.section);
-        const date = cleanText(body.date || body.examDate);
-        const maxMarks = Number(body.maxMarks || body.totalMarks || 0);
-        const schoolId = cleanText(body.schoolId);
-        const teacherId = cleanText(body.teacherId);
-        const classId = cleanText(body.classId);
+        const studentId = cleanText(
+          body.studentId || body.student
+        );
 
-        if (!title) {
+        const studentName = cleanText(
+          body.studentName || body.name
+        );
+
+        const className = cleanText(
+          body.className || body.class
+        );
+
+        const section = cleanText(
+          body.section
+        );
+
+        const status =
+          cleanText(body.status) ||
+          "Present";
+
+        const date =
+          cleanText(body.date) ||
+          getToday();
+
+        const schoolId = cleanText(
+          body.schoolId
+        );
+
+        const teacherId = cleanText(
+          body.teacherId || body.markedBy
+        );
+
+        const classId = cleanText(
+          body.classId
+        );
+
+        if (!studentId) {
           return res.status(400).json({
             success: false,
-            message: "Exam title is required.",
-          });
-        }
-
-        if (!subject) {
-          return res.status(400).json({
-            success: false,
-            message: "Subject is required.",
+            message:
+              "studentId is required.",
           });
         }
 
         if (!className) {
           return res.status(400).json({
             success: false,
-            message: "className is required.",
+            message:
+              "className is required.",
+          });
+        }
+
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
+          });
+        }
+
+        const attendance = {
+          studentId,
+          studentName,
+          classId,
+          className,
+          section,
+          status,
+          date,
+          schoolId,
+          teacherId,
+          markedBy: teacherId,
+          updatedAt: new Date(),
+        };
+
+        const filter = {
+          studentId,
+          className,
+          section,
+          date,
+          schoolId,
+        };
+
+        const collection = getCollection(
+          "attendances"
+        );
+
+        const result =
+          await collection.findOneAndUpdate(
+            filter,
+            {
+              $set: attendance,
+
+              $setOnInsert: {
+                createdAt: new Date(),
+              },
+            },
+            {
+              upsert: true,
+              returnDocument: "after",
+            }
+          );
+
+        const savedAttendance =
+          result?.value ||
+          result || {
+            ...attendance,
+          };
+
+        return res.status(201).json({
+          success: true,
+          message:
+            "Attendance saved successfully.",
+          data: savedAttendance,
+          attendance: savedAttendance,
+        });
+      } catch (error) {
+        return sendServerError(
+          res,
+          error,
+          "Failed to save attendance."
+        );
+      }
+    }
+  );
+
+  app.get(
+    "/api/attendance/class/:className",
+    async (req, res) => {
+      try {
+        const className =
+          req.params.className;
+
+        const section =
+          req.query.section || "";
+
+        const schoolId =
+          req.query.schoolId || "";
+
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
+          });
+        }
+
+        const filter = buildClassFilter(
+          className,
+          section,
+          schoolId
+        );
+
+        const records = await getCollection(
+          "attendances"
+        )
+          .find(filter)
+          .sort({
+            date: -1,
+            createdAt: -1,
+          })
+          .toArray();
+
+        return res.json({
+          success: true,
+          data: records,
+          attendance: records,
+          records,
+        });
+      } catch (error) {
+        return sendServerError(
+          res,
+          error,
+          "Failed to load attendance records."
+        );
+      }
+    }
+  );
+
+  /* ---------------------------------------------------
+     EXAMS
+  --------------------------------------------------- */
+
+  app.post(
+    [
+      "/api/exams/create",
+      "/api/exam/create",
+      "/api/exams",
+      "/api/exam",
+    ],
+    async (req, res) => {
+      try {
+        const body = req.body || {};
+
+        const title = cleanText(
+          body.title || body.examTitle
+        );
+
+        const subject = cleanText(
+          body.subject
+        );
+
+        const className = cleanText(
+          body.className || body.class
+        );
+
+        const section = cleanText(
+          body.section
+        );
+
+        const date = cleanText(
+          body.date || body.examDate
+        );
+
+        const maxMarks = Number(
+          body.maxMarks ||
+            body.totalMarks ||
+            0
+        );
+
+        const schoolId = cleanText(
+          body.schoolId
+        );
+
+        const teacherId = cleanText(
+          body.teacherId
+        );
+
+        const classId = cleanText(
+          body.classId
+        );
+
+        if (!title) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Exam title is required.",
+          });
+        }
+
+        if (!subject) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Subject is required.",
+          });
+        }
+
+        if (!className) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "className is required.",
+          });
+        }
+
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
           });
         }
 
@@ -408,7 +822,9 @@ const registerTeacherDashboardRoutes = () => {
           updatedAt: new Date(),
         };
 
-        const result = await getCollection("exams").insertOne(exam);
+        const result = await getCollection(
+          "exams"
+        ).insertOne(exam);
 
         const savedExam = {
           _id: result.insertedId,
@@ -417,73 +833,153 @@ const registerTeacherDashboardRoutes = () => {
 
         return res.status(201).json({
           success: true,
-          message: "Exam created successfully.",
+          message:
+            "Exam created successfully.",
           data: savedExam,
           exam: savedExam,
         });
       } catch (error) {
-        return sendServerError(res, error, "Failed to create exam.");
+        return sendServerError(
+          res,
+          error,
+          "Failed to create exam."
+        );
       }
     }
   );
 
-  app.get(["/api/exams/class/:className", "/api/exam/class/:className"], async (req, res) => {
-    try {
-      const className = req.params.className;
-      const section = req.query.section || "";
-      const schoolId = req.query.schoolId || "";
+  app.get(
+    [
+      "/api/exams/class/:className",
+      "/api/exam/class/:className",
+    ],
+    async (req, res) => {
+      try {
+        const className =
+          req.params.className;
 
-      const filter = buildClassFilter(className, section, schoolId);
+        const section =
+          req.query.section || "";
 
-      const exams = await getCollection("exams")
-        .find(filter)
-        .sort({ date: -1, createdAt: -1 })
-        .toArray();
+        const schoolId =
+          req.query.schoolId || "";
 
-      return res.json({
-        success: true,
-        data: exams,
-        exams,
-      });
-    } catch (error) {
-      return sendServerError(res, error, "Failed to load exams.");
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
+          });
+        }
+
+        const filter = buildClassFilter(
+          className,
+          section,
+          schoolId
+        );
+
+        const exams = await getCollection(
+          "exams"
+        )
+          .find(filter)
+          .sort({
+            date: -1,
+            createdAt: -1,
+          })
+          .toArray();
+
+        return res.json({
+          success: true,
+          data: exams,
+          exams,
+        });
+      } catch (error) {
+        return sendServerError(
+          res,
+          error,
+          "Failed to load exams."
+        );
+      }
     }
-  });
+  );
 
-  // ---------- NOTICES ----------
+  /* ---------------------------------------------------
+     NOTICES
+  --------------------------------------------------- */
+
   app.post(
-    ["/api/notices/create", "/api/notice/create", "/api/notices", "/api/notice"],
+    [
+      "/api/notices/create",
+      "/api/notice/create",
+      "/api/notices",
+      "/api/notice",
+    ],
     async (req, res) => {
       try {
         const body = req.body || {};
 
-        const title = cleanText(body.title || body.noticeTitle);
-        const content = cleanText(body.content || body.description);
-        const className = cleanText(body.className || body.class);
-        const section = cleanText(body.section);
-        const schoolId = cleanText(body.schoolId);
-        const teacherId = cleanText(body.teacherId);
-        const teacherName = cleanText(body.teacherName);
-        const classId = cleanText(body.classId);
+        const title = cleanText(
+          body.title || body.noticeTitle
+        );
+
+        const content = cleanText(
+          body.content ||
+            body.description
+        );
+
+        const className = cleanText(
+          body.className || body.class
+        );
+
+        const section = cleanText(
+          body.section
+        );
+
+        const schoolId = cleanText(
+          body.schoolId
+        );
+
+        const teacherId = cleanText(
+          body.teacherId
+        );
+
+        const teacherName = cleanText(
+          body.teacherName
+        );
+
+        const classId = cleanText(
+          body.classId
+        );
 
         if (!title) {
           return res.status(400).json({
             success: false,
-            message: "Notice title is required.",
+            message:
+              "Notice title is required.",
           });
         }
 
         if (!content) {
           return res.status(400).json({
             success: false,
-            message: "Notice content is required.",
+            message:
+              "Notice content is required.",
           });
         }
 
         if (!className) {
           return res.status(400).json({
             success: false,
-            message: "className is required.",
+            message:
+              "className is required.",
+          });
+        }
+
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
           });
         }
 
@@ -501,7 +997,9 @@ const registerTeacherDashboardRoutes = () => {
           updatedAt: new Date(),
         };
 
-        const result = await getCollection("notices").insertOne(notice);
+        const result = await getCollection(
+          "notices"
+        ).insertOne(notice);
 
         const savedNotice = {
           _id: result.insertedId,
@@ -510,30 +1008,58 @@ const registerTeacherDashboardRoutes = () => {
 
         return res.status(201).json({
           success: true,
-          message: "Notice created successfully.",
+          message:
+            "Notice created successfully.",
           data: savedNotice,
           notice: savedNotice,
         });
       } catch (error) {
-        return sendServerError(res, error, "Failed to create notice.");
+        return sendServerError(
+          res,
+          error,
+          "Failed to create notice."
+        );
       }
     }
   );
 
   app.get(
-    ["/api/notices/class/:className", "/api/notice/class/:className"],
+    [
+      "/api/notices/class/:className",
+      "/api/notice/class/:className",
+    ],
     async (req, res) => {
       try {
-        const className = req.params.className;
-        const section = req.query.section || "";
-        const schoolId = req.query.schoolId || "";
+        const className =
+          req.params.className;
 
-        const filter = buildClassFilter(className, section, schoolId);
+        const section =
+          req.query.section || "";
 
-        const notices = await getCollection("notices")
-          .find(filter)
-          .sort({ createdAt: -1 })
-          .toArray();
+        const schoolId =
+          req.query.schoolId || "";
+
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
+          });
+        }
+
+        const filter = buildClassFilter(
+          className,
+          section,
+          schoolId
+        );
+
+        const notices =
+          await getCollection("notices")
+            .find(filter)
+            .sort({
+              createdAt: -1,
+            })
+            .toArray();
 
         return res.json({
           success: true,
@@ -541,21 +1067,45 @@ const registerTeacherDashboardRoutes = () => {
           notices,
         });
       } catch (error) {
-        return sendServerError(res, error, "Failed to load notices.");
+        return sendServerError(
+          res,
+          error,
+          "Failed to load notices."
+        );
       }
     }
   );
 
   app.get(
-    ["/api/notices/school/:schoolId", "/api/notice/school/:schoolId"],
+    [
+      "/api/notices/school/:schoolId",
+      "/api/notice/school/:schoolId",
+    ],
     async (req, res) => {
       try {
-        const schoolId = cleanText(req.params.schoolId);
+        const schoolId = cleanText(
+          req.params.schoolId
+        );
 
-        const notices = await getCollection("notices")
-          .find({ schoolId })
-          .sort({ createdAt: -1 })
-          .toArray();
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
+          });
+        }
+
+        const notices =
+          await getCollection("notices")
+            .find({
+              $or: buildSchoolIdConditions(
+                schoolId
+              ),
+            })
+            .sort({
+              createdAt: -1,
+            })
+            .toArray();
 
         return res.json({
           success: true,
@@ -563,12 +1113,19 @@ const registerTeacherDashboardRoutes = () => {
           notices,
         });
       } catch (error) {
-        return sendServerError(res, error, "Failed to load school notices.");
+        return sendServerError(
+          res,
+          error,
+          "Failed to load school notices."
+        );
       }
     }
   );
 
-  // ---------- EXAM RESULTS / MARKS ----------
+  /* ---------------------------------------------------
+     EXAM RESULTS / MARKS
+  --------------------------------------------------- */
+
   app.post(
     [
       "/api/results/create",
@@ -581,35 +1138,89 @@ const registerTeacherDashboardRoutes = () => {
       try {
         const body = req.body || {};
 
-        const examId = cleanText(req.params.examId || body.examId);
-        const studentId = cleanText(body.studentId || body.student);
-        const studentName = cleanText(body.studentName);
-        const examTitle = cleanText(body.examTitle || body.title);
-        const subject = cleanText(body.subject);
-        const className = cleanText(body.className || body.class);
-        const section = cleanText(body.section);
-        const schoolId = cleanText(body.schoolId);
-        const teacherId = cleanText(body.teacherId);
-        const classId = cleanText(body.classId);
-
-        const maxMarks = Number(body.maxMarks || body.totalMarks || 0);
-        const obtainedMarks = Number(
-          body.obtainedMarks || body.marksObtained || body.marks || 0
+        const examId = cleanText(
+          req.params.examId ||
+            body.examId
         );
 
-        const remarks = cleanText(body.remarks || body.feedback);
+        const studentId = cleanText(
+          body.studentId ||
+            body.student
+        );
+
+        const studentName = cleanText(
+          body.studentName
+        );
+
+        const examTitle = cleanText(
+          body.examTitle ||
+            body.title
+        );
+
+        const subject = cleanText(
+          body.subject
+        );
+
+        const className = cleanText(
+          body.className ||
+            body.class
+        );
+
+        const section = cleanText(
+          body.section
+        );
+
+        const schoolId = cleanText(
+          body.schoolId
+        );
+
+        const teacherId = cleanText(
+          body.teacherId
+        );
+
+        const classId = cleanText(
+          body.classId
+        );
+
+        const maxMarks = Number(
+          body.maxMarks ||
+            body.totalMarks ||
+            0
+        );
+
+        const obtainedMarks = Number(
+          body.obtainedMarks ??
+            body.marksObtained ??
+            body.marks ??
+            0
+        );
+
+        const remarks = cleanText(
+          body.remarks ||
+            body.feedback
+        );
 
         if (!examId) {
           return res.status(400).json({
             success: false,
-            message: "examId is required.",
+            message:
+              "examId is required.",
           });
         }
 
         if (!studentId) {
           return res.status(400).json({
             success: false,
-            message: "studentId is required.",
+            message:
+              "studentId is required.",
+          });
+        }
+
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
           });
         }
 
@@ -637,142 +1248,275 @@ const registerTeacherDashboardRoutes = () => {
         const filter = {
           examId,
           studentId,
-          ...(className ? { className } : {}),
-          ...(section ? { section } : {}),
-          ...(schoolId ? { schoolId } : {}),
+          schoolId,
+
+          ...(className
+            ? { className }
+            : {}),
+
+          ...(section
+            ? { section }
+            : {}),
         };
 
-        const result = await getCollection("results").findOneAndUpdate(
-          filter,
-          {
-            $set: resultData,
-            $setOnInsert: {
-              createdAt: new Date(),
+        const result =
+          await getCollection(
+            "results"
+          ).findOneAndUpdate(
+            filter,
+            {
+              $set: resultData,
+
+              $setOnInsert: {
+                createdAt: new Date(),
+              },
             },
-          },
-          {
-            upsert: true,
-            returnDocument: "after",
-          }
-        );
+            {
+              upsert: true,
+              returnDocument: "after",
+            }
+          );
 
-        const savedResult = result.value || {
-          _id: result.upsertedId,
-          ...resultData,
-        };
+        const savedResult =
+          result?.value ||
+          result || {
+            ...resultData,
+          };
 
         return res.status(201).json({
           success: true,
-          message: "Result saved successfully.",
+          message:
+            "Result saved successfully.",
           data: savedResult,
           result: savedResult,
         });
       } catch (error) {
-        return sendServerError(res, error, "Failed to save result.");
+        return sendServerError(
+          res,
+          error,
+          "Failed to save result."
+        );
       }
     }
   );
 
-  app.put("/api/results/:examId/:studentId", async (req, res) => {
-    try {
-      const examId = cleanText(req.params.examId);
-      const studentId = cleanText(req.params.studentId);
-      const body = req.body || {};
+  app.put(
+    "/api/results/:examId/:studentId",
+    async (req, res) => {
+      try {
+        const examId = cleanText(
+          req.params.examId
+        );
 
-      const obtainedMarks = Number(
-        body.obtainedMarks || body.marksObtained || body.marks || 0
-      );
+        const studentId = cleanText(
+          req.params.studentId
+        );
 
-      const updateData = {
-        ...body,
-        examId,
-        studentId,
-        obtainedMarks,
-        marksObtained: obtainedMarks,
-        marks: obtainedMarks,
-        updatedAt: new Date(),
-        savedAt: new Date(),
-      };
+        const body = req.body || {};
 
-      const result = await getCollection("results").findOneAndUpdate(
-        { examId, studentId },
-        {
-          $set: updateData,
-          $setOnInsert: {
-            createdAt: new Date(),
-          },
-        },
-        {
-          upsert: true,
-          returnDocument: "after",
+        const schoolId = cleanText(
+          body.schoolId
+        );
+
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
+          });
         }
-      );
 
-      const savedResult = result.value || {
-        _id: result.upsertedId,
-        ...updateData,
-      };
+        const obtainedMarks = Number(
+          body.obtainedMarks ??
+            body.marksObtained ??
+            body.marks ??
+            0
+        );
 
-      return res.json({
-        success: true,
-        message: "Result updated successfully.",
-        data: savedResult,
-        result: savedResult,
-      });
-    } catch (error) {
-      return sendServerError(res, error, "Failed to update result.");
+        const updateData = {
+          ...body,
+          examId,
+          studentId,
+          schoolId,
+          obtainedMarks,
+          marksObtained:
+            obtainedMarks,
+          marks: obtainedMarks,
+          updatedAt: new Date(),
+          savedAt: new Date(),
+        };
+
+        const result =
+          await getCollection(
+            "results"
+          ).findOneAndUpdate(
+            {
+              examId,
+              studentId,
+              schoolId,
+            },
+            {
+              $set: updateData,
+
+              $setOnInsert: {
+                createdAt: new Date(),
+              },
+            },
+            {
+              upsert: true,
+              returnDocument: "after",
+            }
+          );
+
+        const savedResult =
+          result?.value ||
+          result || {
+            ...updateData,
+          };
+
+        return res.json({
+          success: true,
+          message:
+            "Result updated successfully.",
+          data: savedResult,
+          result: savedResult,
+        });
+      } catch (error) {
+        return sendServerError(
+          res,
+          error,
+          "Failed to update result."
+        );
+      }
     }
-  });
+  );
 
-  app.get("/api/results/exam/:examId", async (req, res) => {
-    try {
-      const examId = cleanText(req.params.examId);
+  app.get(
+    "/api/results/exam/:examId",
+    async (req, res) => {
+      try {
+        const examId = cleanText(
+          req.params.examId
+        );
 
-      const results = await getCollection("results")
-        .find({ examId })
-        .sort({ studentName: 1 })
-        .toArray();
+        const schoolId = cleanText(
+          req.query.schoolId
+        );
 
-      return res.json({
-        success: true,
-        data: results,
-        results,
-      });
-    } catch (error) {
-      return sendServerError(res, error, "Failed to load exam results.");
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
+          });
+        }
+
+        const results =
+          await getCollection("results")
+            .find({
+              examId,
+
+              $or:
+                buildSchoolIdConditions(
+                  schoolId
+                ),
+            })
+            .sort({
+              studentName: 1,
+            })
+            .toArray();
+
+        return res.json({
+          success: true,
+          data: results,
+          results,
+        });
+      } catch (error) {
+        return sendServerError(
+          res,
+          error,
+          "Failed to load exam results."
+        );
+      }
     }
-  });
+  );
 
-  app.get("/api/results/student/:studentId", async (req, res) => {
-    try {
-      const studentId = cleanText(req.params.studentId);
+  app.get(
+    "/api/results/student/:studentId",
+    async (req, res) => {
+      try {
+        const studentId = cleanText(
+          req.params.studentId
+        );
 
-      const results = await getCollection("results")
-        .find({ studentId })
-        .sort({ createdAt: -1 })
-        .toArray();
+        const schoolId = cleanText(
+          req.query.schoolId
+        );
 
-      return res.json({
-        success: true,
-        data: results,
-        results,
-      });
-    } catch (error) {
-      return sendServerError(res, error, "Failed to load student results.");
+        if (!schoolId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "schoolId is required.",
+          });
+        }
+
+        const results =
+          await getCollection("results")
+            .find({
+              studentId,
+
+              $or:
+                buildSchoolIdConditions(
+                  schoolId
+                ),
+            })
+            .sort({
+              createdAt: -1,
+            })
+            .toArray();
+
+        return res.json({
+          success: true,
+          data: results,
+          results,
+        });
+      } catch (error) {
+        return sendServerError(
+          res,
+          error,
+          "Failed to load student results."
+        );
+      }
     }
-  });
+  );
 
-  console.log("✅ Direct Teacher Dashboard routes enabled");
+  console.log(
+    "✅ Direct Teacher Dashboard routes enabled"
+  );
 };
 
-// ================= OPTIONAL ROUTE LOADER =================
-const registerOptionalRoute = async (importPath, mountPaths, label) => {
+/* =====================================================
+   OPTIONAL ROUTE LOADER
+===================================================== */
+
+const registerOptionalRoute = async (
+  importPath,
+  mountPaths,
+  label
+) => {
   try {
-    const routeModule = await import(importPath);
+    const routeModule = await import(
+      importPath
+    );
+
     const router = routeModule.default;
 
     if (!router) {
-      console.warn(`⚠️ ${label} route file exists but has no default export.`);
+      console.warn(
+        `⚠️ ${label} route file exists but has no default export.`
+      );
+
       return;
     }
 
@@ -780,17 +1524,26 @@ const registerOptionalRoute = async (importPath, mountPaths, label) => {
       app.use(mountPath, router);
     });
 
-    console.log(`✅ ${label} routes enabled: ${mountPaths.join(", ")}`);
+    console.log(
+      `✅ ${label} routes enabled: ${mountPaths.join(
+        ", "
+      )}`
+    );
   } catch (error) {
-    const expectedPath = importPath.replace("./", "");
+    const expectedPath =
+      importPath.replace("./", "");
 
     if (
-      error.code === "ERR_MODULE_NOT_FOUND" &&
-      error.message.includes(expectedPath)
+      error.code ===
+        "ERR_MODULE_NOT_FOUND" &&
+      error.message.includes(
+        expectedPath
+      )
     ) {
       console.warn(
         `⚠️ ${label} routes skipped because ${expectedPath} is not created yet.`
       );
+
       return;
     }
 
@@ -798,18 +1551,37 @@ const registerOptionalRoute = async (importPath, mountPaths, label) => {
   }
 };
 
-// ================= API ROUTES =================
+/* =====================================================
+   API ROUTES
+===================================================== */
+
 const registerRoutes = async () => {
-  // Main routes
+  /*
+    Public authentication routes:
+
+    POST /api/auth/signup
+    POST /api/auth/login
+  */
   app.use("/api/auth", authRoutes);
+
+  /*
+    Existing admin creates teachers and students through
+    the users route.
+  */
   app.use("/api/users", userRoutes);
+
   app.use("/api/tasks", taskRoutes);
 
-  // Direct teacher dashboard routes first, so save buttons work reliably
+  /*
+    Register direct dashboard routes before the older
+    route files so the dashboard endpoints are found first.
+  */
   registerTeacherDashboardRoutes();
 
-  // Existing route files still remain active
-  app.use("/api/attendance", attendanceRoutes);
+  app.use(
+    "/api/attendance",
+    attendanceRoutes
+  );
 
   app.use("/api/exam", examRoutes);
   app.use("/api/exams", examRoutes);
@@ -817,8 +1589,15 @@ const registerRoutes = async () => {
   app.use("/api/notice", noticeRoutes);
   app.use("/api/notices", noticeRoutes);
 
-  app.use("/api/subjects", subjectRoutes);
-  app.use("/api/subject", subjectRoutes);
+  app.use(
+    "/api/subjects",
+    subjectRoutes
+  );
+
+  app.use(
+    "/api/subject",
+    subjectRoutes
+  );
 
   app.use("/api/school", schoolRoutes);
   app.use("/api/schools", schoolRoutes);
@@ -829,44 +1608,117 @@ const registerRoutes = async () => {
     "Reports"
   );
 
+  /*
+    API 404 handler
+  */
   app.use((req, res) => {
     res.status(404).json({
       success: false,
       message: "API route not found",
+      method: req.method,
       path: req.originalUrl,
     });
   });
 };
 
-// ================= SERVER START =================
+/* =====================================================
+   SERVER START
+===================================================== */
+
 const startServer = async () => {
   try {
     if (!process.env.MONGO_URI) {
-      console.error("❌ MONGO_URI is missing in .env file.");
+      console.error(
+        "❌ MONGO_URI is missing in the backend .env file."
+      );
+
       process.exit(1);
     }
 
-    await mongoose.connect(process.env.MONGO_URI);
+    await mongoose.connect(
+      process.env.MONGO_URI
+    );
 
-    console.log("✅ MongoDB connected");
+    console.log(
+      "✅ MongoDB connected successfully"
+    );
+
+    /*
+      Remove old unique school indexes before accepting
+      new school/admin registrations.
+    */
+    await repairLegacySchoolIndexes();
 
     await registerRoutes();
 
-    const PORT = process.env.PORT || 5000;
+    const PORT =
+      Number(process.env.PORT) || 5000;
 
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on http://localhost:${PORT}`);
-      console.log(`📁 Server uploads folder: ${serverUploadsDir}`);
-      console.log(`📁 Root uploads folder: ${rootUploadsDir}`);
-      console.log(`🌐 Files available at http://localhost:${PORT}/uploads`);
+      console.log(
+        `🚀 Server running on http://localhost:${PORT}`
+      );
+
+      console.log(
+        `❤️ Health check: http://localhost:${PORT}/api/health`
+      );
+
+      console.log(
+        `📝 Admin signup: http://localhost:${PORT}/api/auth/signup`
+      );
+
+      console.log(
+        `🔐 Login: http://localhost:${PORT}/api/auth/login`
+      );
+
+      console.log(
+        `📁 Server uploads folder: ${serverUploadsDir}`
+      );
+
+      console.log(
+        `📁 Root uploads folder: ${rootUploadsDir}`
+      );
+
+      console.log(
+        `🌐 Files available at http://localhost:${PORT}/uploads`
+      );
+
       console.log(
         `⬇️ Download route: http://localhost:${PORT}/uploads/download?file=filename.pdf`
       );
     });
-  } catch (err) {
-    console.error("❌ Server startup error:", err);
+  } catch (error) {
+    console.error(
+      "❌ Server startup error:",
+      error
+    );
+
     process.exit(1);
   }
 };
+
+/* =====================================================
+   UNEXPECTED ERROR HANDLERS
+===================================================== */
+
+process.on(
+  "unhandledRejection",
+  (error) => {
+    console.error(
+      "❌ Unhandled promise rejection:",
+      error
+    );
+  }
+);
+
+process.on(
+  "uncaughtException",
+  (error) => {
+    console.error(
+      "❌ Uncaught exception:",
+      error
+    );
+  }
+);
 
 startServer();
