@@ -8,30 +8,105 @@ const router = express.Router();
 
 const cleanText = (value) => String(value || "").trim();
 
-const cleanEmail = (value) => cleanText(value).toLowerCase();
+const normalizeEmail = (email) => cleanText(email).toLowerCase();
 
-const escapeRegex = (value) => {
+const normalizeRole = (role) => {
+  const cleanedRole = cleanText(role).toLowerCase();
+
+  if (cleanedRole === "principal") return "admin";
+  if (cleanedRole === "admin") return "admin";
+  if (cleanedRole === "teacher") return "teacher";
+  if (cleanedRole === "student") return "student";
+
+  return "";
+};
+
+const escapeRegExp = (value) => {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
 
-const createToken = (user) => {
-  if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET is missing in backend environment variables");
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error("JWT_SECRET is missing in backend environment variables.");
   }
 
+  return secret;
+};
+
+const createToken = (user) => {
   return jwt.sign(
     {
-      id: String(user._id),
+      id: user._id,
       role: user.role,
-      schoolId: String(user.schoolId?._id || user.schoolId),
+      schoolId: user.schoolId?._id || user.schoolId,
     },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
+    getJwtSecret(),
+    {
+      expiresIn: "7d",
+    }
   );
 };
 
-const buildUserResponse = (user, school = null) => {
-  const schoolDoc = school || user.schoolId;
+const buildSchoolPayload = (body = {}) => {
+  const schoolName = cleanText(body.schoolName || body.school || body.institutionName);
+
+  const address = cleanText(body.address);
+  const phone = cleanText(body.phone || body.contact);
+  const email = normalizeEmail(body.schoolEmail || body.email);
+  const website = cleanText(body.website);
+  const principalName = cleanText(body.principalName || body.principal);
+  const adminName = cleanText(body.adminName || body.name);
+
+  const latitude =
+    body.latitude !== undefined && body.latitude !== null && body.latitude !== ""
+      ? Number(body.latitude)
+      : null;
+
+  const longitude =
+    body.longitude !== undefined && body.longitude !== null && body.longitude !== ""
+      ? Number(body.longitude)
+      : null;
+
+  const payload = {
+    schoolName,
+    address,
+    phone,
+    email,
+    website,
+    principalName,
+    adminName,
+    logoUrl: cleanText(body.logoUrl),
+    isActive: true,
+    addressDetails: {
+      formattedAddress: cleanText(body.formattedAddress || body.address),
+      addressLine1: cleanText(body.addressLine1 || body.address),
+      municipality: cleanText(body.municipality),
+      district: cleanText(body.district),
+      province: cleanText(body.province),
+      country: cleanText(body.country) || "Nepal",
+      postalCode: cleanText(body.postalCode),
+      placeId: cleanText(body.placeId),
+      latitude: Number.isFinite(latitude) ? latitude : null,
+      longitude: Number.isFinite(longitude) ? longitude : null,
+    },
+  };
+
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    payload.location = {
+      type: "Point",
+      coordinates: [longitude, latitude],
+    };
+  }
+
+  return payload;
+};
+
+const formatUserResponse = (user, school = null) => {
+  const populatedSchool =
+    school ||
+    (user.schoolId && typeof user.schoolId === "object" ? user.schoolId : null);
 
   return {
     _id: user._id,
@@ -39,42 +114,39 @@ const buildUserResponse = (user, school = null) => {
     name: user.name,
     email: user.email,
     role: user.role,
-    schoolId: schoolDoc?._id || user.schoolId,
-    schoolName: schoolDoc?.schoolName || schoolDoc?.name || "",
+    schoolId: populatedSchool?._id || user.schoolId,
+    schoolName: populatedSchool?.schoolName || "",
     className: user.className || "",
     section: user.section || "",
-    phone: user.phone || "",
+    rollNumber: user.rollNumber || "",
+    studentCode: user.studentCode || "",
+    employeeId: user.employeeId || "",
     profileImage: user.profileImage || "",
     isActive: user.isActive,
     accountStatus: user.accountStatus,
   };
 };
 
-// SIGNUP - creates first admin and school
-router.post("/signup", async (req, res) => {
+// SIGNUP - first account must be admin/principal
+const signupHandler = async (req, res) => {
   try {
     const name = cleanText(req.body.name || req.body.fullName);
-    const email = cleanEmail(req.body.email);
-    const password = cleanText(req.body.password);
-    const requestedRole = cleanText(req.body.role || "admin").toLowerCase();
-
-    const schoolName = cleanText(
-      req.body.schoolName ||
-        req.body.school ||
-        req.body.institutionName ||
-        req.body.organizationName
-    );
+    const email = normalizeEmail(req.body.email);
+    const password = String(req.body.password || "");
+    const schoolName = cleanText(req.body.schoolName || req.body.school);
+    const finalRole = normalizeRole(req.body.role || "admin");
 
     if (!name || !email || !password || !schoolName) {
       return res.status(400).json({
-        message: "Name, email, password and school name are required",
+        message: "Name, email, password and school name are required.",
       });
     }
 
-    const finalRole =
-      requestedRole === "admin" || requestedRole === "principal"
-        ? "admin"
-        : requestedRole;
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters.",
+      });
+    }
 
     if (finalRole !== "admin") {
       return res.status(400).json({
@@ -87,47 +159,26 @@ router.post("/signup", async (req, res) => {
 
     if (existingUser) {
       return res.status(400).json({
-        message: "User already exists with this email",
+        message: "User already exists with this email.",
       });
     }
 
     let school = await School.findOne({
       schoolName: {
-        $regex: `^${escapeRegex(schoolName)}$`,
+        $regex: `^${escapeRegExp(schoolName)}$`,
         $options: "i",
       },
     });
 
     if (!school) {
-      school = await School.create({
+      const schoolPayload = buildSchoolPayload({
+        ...req.body,
         schoolName,
         adminName: name,
-        email,
-        address: cleanText(req.body.address),
-        phone: cleanText(req.body.phone),
-        website: cleanText(req.body.website),
-        principalName: cleanText(req.body.principalName),
-        logoUrl: cleanText(req.body.logoUrl),
-        isActive: true,
-        addressDetails: {
-          formattedAddress: cleanText(req.body.formattedAddress),
-          addressLine1: cleanText(req.body.addressLine1 || req.body.address),
-          municipality: cleanText(req.body.municipality),
-          district: cleanText(req.body.district),
-          province: cleanText(req.body.province),
-          country: cleanText(req.body.country) || "Nepal",
-          postalCode: cleanText(req.body.postalCode),
-          placeId: cleanText(req.body.placeId),
-          latitude:
-            req.body.latitude !== undefined && req.body.latitude !== ""
-              ? Number(req.body.latitude)
-              : null,
-          longitude:
-            req.body.longitude !== undefined && req.body.longitude !== ""
-              ? Number(req.body.longitude)
-              : null,
-        },
+        schoolEmail: req.body.schoolEmail || "",
       });
+
+      school = await School.create(schoolPayload);
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -138,6 +189,8 @@ router.post("/signup", async (req, res) => {
       password: hashedPassword,
       role: "admin",
       schoolId: school._id,
+      phone: cleanText(req.body.phone),
+      address: cleanText(req.body.address),
       isActive: true,
       accountStatus: "active",
     });
@@ -145,51 +198,52 @@ router.post("/signup", async (req, res) => {
     const token = createToken(user);
 
     return res.status(201).json({
-      message: "Admin account created successfully",
+      message: "Admin account created successfully.",
       token,
-      user: buildUserResponse(user, school),
+      user: formatUserResponse(user, school),
     });
   } catch (err) {
     console.error("SIGNUP ERROR:", err);
 
-    if (err.code === 11000) {
-      return res.status(400).json({
-        message: "User already exists with this email",
-      });
-    }
-
     return res.status(500).json({
-      message: err.message || "Signup failed",
+      message: err.message || "Signup failed.",
     });
   }
-});
+};
 
 // LOGIN
-router.post("/login", async (req, res) => {
+const loginHandler = async (req, res) => {
   try {
-    const email = cleanEmail(req.body.email);
-    const password = cleanText(req.body.password);
+    const email = normalizeEmail(req.body.email);
+    const password = String(req.body.password || "");
 
     if (!email || !password) {
       return res.status(400).json({
-        message: "Email and password are required",
+        message: "Email and password are required.",
       });
     }
 
     const user = await User.findOne({ email }).populate(
       "schoolId",
-      "schoolName name email phone address logoUrl isActive"
+      "schoolName email logoUrl isActive"
     );
 
     if (!user) {
       return res.status(404).json({
-        message: "User not found",
+        message: "User not found.",
       });
     }
 
-    if (!user.isActive || user.accountStatus === "deactivated") {
+    if (user.isActive === false || user.accountStatus === "deactivated") {
       return res.status(403).json({
-        message: "This account has been deactivated",
+        message: "This account is deactivated. Please contact your school admin.",
+      });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        message:
+          "This account has no password saved. Delete this user from MongoDB and sign up again.",
       });
     }
 
@@ -197,7 +251,7 @@ router.post("/login", async (req, res) => {
 
     if (!isPasswordCorrect) {
       return res.status(400).json({
-        message: "Invalid password",
+        message: "Invalid email or password.",
       });
     }
 
@@ -207,17 +261,23 @@ router.post("/login", async (req, res) => {
     const token = createToken(user);
 
     return res.status(200).json({
-      message: "Login successful",
+      message: "Login successful.",
       token,
-      user: buildUserResponse(user),
+      user: formatUserResponse(user),
     });
   } catch (err) {
     console.error("LOGIN ERROR:", err);
 
     return res.status(500).json({
-      message: err.message || "Login failed",
+      message: err.message || "Login failed.",
     });
   }
-});
+};
+
+router.post("/signup", signupHandler);
+router.post("/register", signupHandler);
+
+router.post("/login", loginHandler);
+router.post("/signin", loginHandler);
 
 export default router;

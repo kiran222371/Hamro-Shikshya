@@ -68,7 +68,6 @@ const locationSchema = new mongoose.Schema(
     type: {
       type: String,
       enum: ["Point"],
-      default: "Point",
       required: true,
     },
 
@@ -76,14 +75,15 @@ const locationSchema = new mongoose.Schema(
       type: [Number],
       required: true,
       validate: {
-        validator(value) {
+        validator: function (value) {
           return (
             Array.isArray(value) &&
             value.length === 2 &&
-            value.every((number) => Number.isFinite(Number(number)))
+            Number.isFinite(value[0]) &&
+            Number.isFinite(value[1])
           );
         },
-        message: "Coordinates must be [longitude, latitude]",
+        message: "Location coordinates must be [longitude, latitude].",
       },
     },
   },
@@ -109,10 +109,6 @@ const schoolSchema = new mongoose.Schema(
       default: () => ({}),
     },
 
-    // Important:
-    // location must be undefined unless valid coordinates exist.
-    // Otherwise MongoDB 2dsphere index gives:
-    // "Point must be an array or object, instead got type missing"
     location: {
       type: locationSchema,
       default: undefined,
@@ -163,59 +159,8 @@ const schoolSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-schoolSchema.pre("validate", function () {
-  const currentCoordinates = this.location?.coordinates;
-
-  const hasValidCoordinates =
-    Array.isArray(currentCoordinates) &&
-    currentCoordinates.length === 2 &&
-    currentCoordinates.every((number) => Number.isFinite(Number(number)));
-
-  if (hasValidCoordinates) {
-    this.location = {
-      type: "Point",
-      coordinates: [
-        Number(currentCoordinates[0]),
-        Number(currentCoordinates[1]),
-      ],
-    };
-
-    return;
-  }
-
-  const latitude = Number(this.addressDetails?.latitude);
-  const longitude = Number(this.addressDetails?.longitude);
-
-  const hasAddressCoordinates =
-    Number.isFinite(latitude) && Number.isFinite(longitude);
-
-  if (hasAddressCoordinates) {
-    this.location = {
-      type: "Point",
-      coordinates: [longitude, latitude],
-    };
-
-    return;
-  }
-
-  this.location = undefined;
-});
-
-schoolSchema.virtual("name").get(function () {
-  return this.schoolName;
-});
-
-schoolSchema.set("toJSON", {
-  virtuals: true,
-  transform: (doc, ret) => {
-    delete ret.__v;
-    return ret;
-  },
-});
-
-schoolSchema.index({ location: "2dsphere" }, { sparse: true });
+schoolSchema.index({ location: "2dsphere" });
 schoolSchema.index({ schoolName: 1 });
-schoolSchema.index({ email: 1 });
 
 const School = mongoose.models.School || mongoose.model("School", schoolSchema);
 
