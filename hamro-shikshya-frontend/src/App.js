@@ -46,9 +46,9 @@ function clearAuthStorage() {
 function getDashboardPathByRole(role) {
   const cleanRole = String(role || "").trim().toLowerCase();
 
-  if (cleanRole === "admin") return "/admin";
-  if (cleanRole === "teacher") return "/teacher";
-  if (cleanRole === "student") return "/student";
+  if (cleanRole === "admin") return "/admin/overview";
+  if (cleanRole === "teacher") return "/teacher/overview";
+  if (cleanRole === "student") return "/student/overview";
 
   return "/login";
 }
@@ -139,7 +139,7 @@ export default function App() {
         />
 
         <Route
-          path="/admin"
+          path="/admin/*"
           element={
             <ProtectedRoute allowedRole="admin">
               <AdminDashboard />
@@ -148,7 +148,7 @@ export default function App() {
         />
 
         <Route
-          path="/teacher"
+          path="/teacher/*"
           element={
             <ProtectedRoute allowedRole="teacher">
               <TeacherDashboard />
@@ -157,7 +157,7 @@ export default function App() {
         />
 
         <Route
-          path="/student"
+          path="/student/*"
           element={
             <ProtectedRoute allowedRole="student">
               <StudentDashboard />

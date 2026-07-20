@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api, {
   createUser,
   getUsers,
@@ -11,11 +12,27 @@ import api, {
   saveSchoolProfile,
   GOOGLE_MAPS_API_KEY,
 } from "../api";
+import PortalLayout from "../components/PortalLayout";
 import "../styles/App.css";
 
 const SUBJECTS_STORAGE_KEY = "hamro_shikshya_subjects";
 const SCHOOL_PROFILE_STORAGE_KEY = "hamro_shikshya_school_profile";
 const GOOGLE_SCRIPT_ID = "hamro-shikshya-google-places-script";
+
+const ADMIN_NAVIGATION = [
+  { to: "/admin/overview", label: "Overview", icon: "▦" },
+  { to: "/admin/school", label: "School Profile", icon: "🏫" },
+  { to: "/admin/subjects", label: "Subjects", icon: "📚" },
+  { to: "/admin/reports", label: "Reports", icon: "📊" },
+  { to: "/admin/create-user", label: "Add User", icon: "➕" },
+  { to: "/admin/users", label: "User Management", icon: "⚙️" },
+  { to: "/admin/teachers", label: "Teachers", icon: "👩‍🏫" },
+  { to: "/admin/students", label: "Students", icon: "🎓" },
+];
+
+const ADMIN_VIEWS = new Set(
+  ADMIN_NAVIGATION.map((item) => item.to.split("/").filter(Boolean).pop())
+);
 
 const NEPAL_CLASSES = Array.from({ length: 12 }, (_, index) =>
   String(index + 1)
@@ -328,6 +345,22 @@ const loadGooglePlacesScript = () => {
 };
 
 export default function AdminDashboard() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const activeView = useMemo(() => {
+    const segment = location.pathname.split("/").filter(Boolean)[1] || "overview";
+    return ADMIN_VIEWS.has(segment) ? segment : "overview";
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const segment = location.pathname.split("/").filter(Boolean)[1];
+
+    if (!segment || !ADMIN_VIEWS.has(segment)) {
+      navigate("/admin/overview", { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
   const addressInputRef = useRef(null);
   const autocompleteRef = useRef(null);
 
@@ -411,9 +444,7 @@ export default function AdminDashboard() {
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    window.location.href = "/#/login";
+    navigate("/login", { replace: true });
   };
 
   const toArray = (res) => {
@@ -940,6 +971,7 @@ export default function AdminDashboard() {
   };
 
   const startEdit = (user) => {
+    navigate("/admin/users");
     setEditingUser(user);
     setError("");
     setSuccess("");
@@ -1546,6 +1578,7 @@ export default function AdminDashboard() {
   };
 
   const startSubjectEdit = (subject) => {
+    navigate("/admin/subjects");
     setEditingSubject(subject);
     setSubjectForm({
       name: subject.name || subject.subjectName || "",
@@ -1721,8 +1754,29 @@ export default function AdminDashboard() {
   };
 
   return (
-    <main className="dashboard-page admin-dashboard-page">
-      <section className="dashboard-card dashboard-header admin-hero">
+    <PortalLayout
+      role="admin"
+      portalName="Admin Portal"
+      user={loggedUser}
+      navigation={ADMIN_NAVIGATION}
+      onLogout={logout}
+      headerMeta={
+        <>
+          <span className="portal-header-pill">
+            🏫 {schoolProfile.schoolName || loggedUser.schoolName || "School not set"}
+          </span>
+          {loading && <span className="portal-header-pill">Loading…</span>}
+        </>
+      }
+    >
+      <div
+        className="dashboard-page admin-dashboard-page portal-page-stack"
+        style={{ minHeight: "auto", padding: 0, background: "transparent" }}
+      >
+      <section
+        className="dashboard-card dashboard-header admin-hero"
+        hidden={activeView !== "overview"}
+      >
         <div>
           <span className="admin-top-badge">School Admin Panel</span>
           <h1 className="dashboard-main-title">Admin Dashboard</h1>
@@ -1760,7 +1814,7 @@ export default function AdminDashboard() {
         </section>
       )}
 
-      <section className="admin-stats-grid">
+      <section className="admin-stats-grid" hidden={activeView !== "overview"}>
         <div className="admin-stat-card blue">
           <span>Total Users</span>
           <strong>{reportData.totalUsers}</strong>
@@ -1786,7 +1840,7 @@ export default function AdminDashboard() {
         </div>
       </section>
 
-      <section className="admin-quick-grid">
+      <section className="admin-quick-grid" hidden={activeView !== "overview"}>
         <div className="admin-quick-card">
           <h3>School Setup</h3>
           <p>Manage profile, address, contact and Google location.</p>
@@ -1808,7 +1862,10 @@ export default function AdminDashboard() {
         </div>
       </section>
 
-      <section className="dashboard-card admin-section-card">
+      <section
+        className="dashboard-card admin-section-card"
+        hidden={activeView !== "school"}
+      >
         <div className="admin-section-title-row">
           <div>
             <h2 className="card-title">School Profile</h2>
@@ -2004,7 +2061,10 @@ export default function AdminDashboard() {
         </form>
       </section>
 
-      <section className="dashboard-card admin-section-card">
+      <section
+        className="dashboard-card admin-section-card"
+        hidden={activeView !== "subjects"}
+      >
         <div className="admin-section-title-row">
           <div>
             <h2 className="card-title">Subject Management</h2>
@@ -2225,7 +2285,10 @@ export default function AdminDashboard() {
         )}
       </section>
 
-      <section className="dashboard-card admin-section-card">
+      <section
+        className="dashboard-card admin-section-card"
+        hidden={activeView !== "reports"}
+      >
         <div className="admin-section-title-row">
           <div>
             <h2 className="card-title">Reports</h2>
@@ -2296,7 +2359,10 @@ export default function AdminDashboard() {
       </section>
 
       {editingUser && (
-        <section className="dashboard-card admin-section-card">
+        <section
+          className="dashboard-card admin-section-card"
+          hidden={activeView !== "users"}
+        >
           <h2 className="card-title">Edit User</h2>
 
           <form onSubmit={handleUpdateUser}>
@@ -2472,7 +2538,10 @@ export default function AdminDashboard() {
         </section>
       )}
 
-      <section className="dashboard-card admin-section-card">
+      <section
+        className="dashboard-card admin-section-card"
+        hidden={activeView !== "create-user"}
+      >
         <div className="admin-section-title-row">
           <div>
             <h2 className="card-title">Add Teacher / Student</h2>
@@ -2661,7 +2730,10 @@ export default function AdminDashboard() {
         </form>
       </section>
 
-      <section className="dashboard-card admin-section-card">
+      <section
+        className="dashboard-card admin-section-card"
+        hidden={activeView !== "users"}
+      >
         <div className="admin-section-title-row">
           <div>
             <h2 className="card-title">User Management</h2>
@@ -2704,7 +2776,10 @@ export default function AdminDashboard() {
         </div>
       </section>
 
-      <section className="dashboard-card admin-section-card">
+      <section
+        className="dashboard-card admin-section-card"
+        hidden={activeView !== "teachers"}
+      >
         <h2 className="card-title">Teachers</h2>
 
         {loading ? (
@@ -2751,7 +2826,10 @@ export default function AdminDashboard() {
         )}
       </section>
 
-      <section className="dashboard-card admin-section-card">
+      <section
+        className="dashboard-card admin-section-card"
+        hidden={activeView !== "students"}
+      >
         <h2 className="card-title">Students</h2>
 
         {loading ? (
@@ -2790,6 +2868,7 @@ export default function AdminDashboard() {
           </div>
         )}
       </section>
-    </main>
+      </div>
+    </PortalLayout>
   );
 }

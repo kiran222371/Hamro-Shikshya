@@ -583,6 +583,7 @@ export const getArrayFromApiResponse = (
   if (Array.isArray(body?.records)) return body.records;
   if (Array.isArray(body?.exams)) return body.exams;
   if (Array.isArray(body?.notices)) return body.notices;
+  if (Array.isArray(body?.notifications)) return body.notifications;
   if (Array.isArray(body?.results)) return body.results;
   if (Array.isArray(body?.marks)) return body.marks;
   if (Array.isArray(body?.timetable)) return body.timetable;
@@ -2742,5 +2743,45 @@ export const getTimetableByClass = (
     []
   );
 };
+
+
+/* =====================================================
+   NOTIFICATIONS
+===================================================== */
+
+export const getNotifications = ({
+  page = 1,
+  limit = 30,
+  unreadOnly = false,
+} = {}) => {
+  return api.get("/notifications", {
+    params: {
+      page,
+      limit,
+      unreadOnly,
+    },
+  });
+};
+
+export const getUnreadNotificationCount = () =>
+  api.get("/notifications/unread-count");
+
+export const markNotificationAsRead = (
+  notificationId
+) =>
+  api.patch(
+    `/notifications/${notificationId}/read`
+  );
+
+export const markAllNotificationsAsRead = () =>
+  api.patch("/notifications/read-all");
+
+export const deleteNotification = (
+  notificationId
+) =>
+  api.delete(
+    `/notifications/${notificationId}`
+  );
+
 
 export default api;

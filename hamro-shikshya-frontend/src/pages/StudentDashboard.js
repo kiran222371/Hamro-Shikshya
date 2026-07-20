@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import PortalLayout from "../components/PortalLayout";
 import "../styles/App.css";
 import {
   buildFileUrl,
@@ -13,6 +15,22 @@ import {
 } from "../api";
 
 const emptyArray = [];
+
+const STUDENT_NAVIGATION = [
+  { to: "/student/overview", label: "Overview", icon: "▦" },
+  { to: "/student/profile", label: "My Profile", icon: "👤" },
+  { to: "/student/homework", label: "Homework", icon: "📚" },
+  { to: "/student/notices", label: "Notices", icon: "📢" },
+  { to: "/student/exams", label: "Exams", icon: "📝" },
+  { to: "/student/results", label: "Results", icon: "🏆" },
+  { to: "/student/attendance", label: "Attendance", icon: "📅" },
+  { to: "/student/timetable", label: "Timetable", icon: "🗓️" },
+];
+
+const STUDENT_VIEWS = new Set(
+  STUDENT_NAVIGATION.map((item) => item.to.split("/").filter(Boolean).pop())
+);
+
 
 const WEEK_ORDER = {
   sunday: 1,
@@ -381,6 +399,20 @@ function StatusBadge({ children, type = "info" }) {
 }
 
 export default function StudentDashboard() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const requestedView = location.pathname.split("/").filter(Boolean).pop();
+  const activeView = STUDENT_VIEWS.has(requestedView)
+    ? requestedView
+    : "overview";
+
+  useEffect(() => {
+    if (!STUDENT_VIEWS.has(requestedView)) {
+      navigate("/student/overview", { replace: true });
+    }
+  }, [navigate, requestedView]);
+
   const [tasks, setTasks] = useState(emptyArray);
   const [submissions, setSubmissions] = useState(emptyArray);
   const [exams, setExams] = useState(emptyArray);
@@ -697,16 +729,7 @@ export default function StudentDashboard() {
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-
-    /*
-      Your deployed app is using hash URL like:
-      https://hamro-shikshya-frontend.onrender.com/#/student
-
-      So logout must go to /#/login, not /login.
-      This prevents the black/blank screen after logout.
-    */
-    const baseUrl = `${window.location.origin}${window.location.pathname}`;
-    window.location.href = `${baseUrl}#/login`;
+    navigate("/login", { replace: true });
   };
 
   const styles = {
@@ -807,8 +830,20 @@ export default function StudentDashboard() {
     },
   };
 
+  const headerMeta = (
+    <span>🎓 Class {className || "N/A"}{section ? ` • Section ${section}` : ""}</span>
+  );
+
   return (
-    <main className="dashboard-page">
+    <PortalLayout
+      role="student"
+      portalName="Student Portal"
+      user={loggedUser}
+      navigation={STUDENT_NAVIGATION}
+      onLogout={logout}
+      headerMeta={headerMeta}
+    >
+      <div className="dashboard-page">
       <style>
         {`
           .student-hero {
@@ -889,7 +924,7 @@ export default function StudentDashboard() {
         `}
       </style>
 
-      <section className="student-hero" style={styles.hero}>
+      <section className="student-hero" style={styles.hero} hidden={activeView !== "overview"}>
         <div className="student-hero-left">
           <div style={styles.avatar}>{studentInitial}</div>
 
@@ -904,7 +939,7 @@ export default function StudentDashboard() {
             <button
               type="button"
               style={styles.quickButton}
-              onClick={() => scrollToSection("homework")}
+              onClick={() => navigate("/student/homework")}
             >
               Homework
             </button>
@@ -912,7 +947,7 @@ export default function StudentDashboard() {
             <button
               type="button"
               style={styles.quickButton}
-              onClick={() => scrollToSection("notices")}
+              onClick={() => navigate("/student/notices")}
             >
               Notices
             </button>
@@ -920,7 +955,7 @@ export default function StudentDashboard() {
             <button
               type="button"
               style={styles.quickButton}
-              onClick={() => scrollToSection("exams")}
+              onClick={() => navigate("/student/exams")}
             >
               Exams
             </button>
@@ -928,7 +963,7 @@ export default function StudentDashboard() {
             <button
               type="button"
               style={styles.quickButton}
-              onClick={() => scrollToSection("results")}
+              onClick={() => navigate("/student/results")}
             >
               Results
             </button>
@@ -936,7 +971,7 @@ export default function StudentDashboard() {
             <button
               type="button"
               style={styles.quickButton}
-              onClick={() => scrollToSection("attendance")}
+              onClick={() => navigate("/student/attendance")}
             >
               Attendance
             </button>
@@ -944,7 +979,7 @@ export default function StudentDashboard() {
             <button
               type="button"
               style={styles.quickButton}
-              onClick={() => scrollToSection("timetable")}
+              onClick={() => navigate("/student/timetable")}
             >
               Timetable
             </button>
@@ -999,7 +1034,7 @@ export default function StudentDashboard() {
         </section>
       )}
 
-      <section className="student-stats-grid">
+      <section className="student-stats-grid" hidden={activeView !== "overview"}>
         <StatCard
           icon="📚"
           label="Total Homework"
@@ -1049,8 +1084,8 @@ export default function StudentDashboard() {
         />
       </section>
 
-      <section className="student-two-column">
-        <section className="dashboard-card">
+      <section className="student-two-column" hidden={!(["overview", "profile"].includes(activeView))}>
+        <section className="dashboard-card" hidden={activeView !== "profile" && activeView !== "overview"}>
           <h2 className="card-title">My Profile</h2>
 
           <div style={styles.profileRow}>
@@ -1079,7 +1114,7 @@ export default function StudentDashboard() {
           </div>
         </section>
 
-        <section className="dashboard-card">
+        <section className="dashboard-card" hidden={activeView !== "overview"}>
           <h2 className="card-title">Today / Priority</h2>
 
           {pendingTasks.length === 0 && !nextExam ? (
@@ -1140,6 +1175,7 @@ export default function StudentDashboard() {
       <section
         id="homework"
         className="dashboard-card"
+        hidden={activeView !== "homework"}
         style={{ marginTop: 24 }}
       >
         <div
@@ -1388,8 +1424,8 @@ export default function StudentDashboard() {
           })}
       </section>
 
-      <section className="student-two-column">
-        <section id="notices" className="dashboard-card">
+      <section className="student-two-column" hidden={!(["notices", "exams"].includes(activeView))}>
+        <section id="notices" className="dashboard-card" hidden={activeView !== "notices"}>
           <h2 className="card-title">Latest Notices</h2>
 
           {recentNotices.length === 0 ? (
@@ -1416,7 +1452,7 @@ export default function StudentDashboard() {
           )}
         </section>
 
-        <section id="exams" className="dashboard-card">
+        <section id="exams" className="dashboard-card" hidden={activeView !== "exams"}>
           <h2 className="card-title">Upcoming Exams</h2>
 
           {upcomingExams.length === 0 ? (
@@ -1448,8 +1484,8 @@ export default function StudentDashboard() {
         </section>
       </section>
 
-      <section className="student-two-column">
-        <section id="results" className="dashboard-card">
+      <section className="student-two-column" hidden={!(["results", "attendance"].includes(activeView))}>
+        <section id="results" className="dashboard-card" hidden={activeView !== "results"}>
           <h2 className="card-title">My Results</h2>
 
           {recentResults.length === 0 ? (
@@ -1500,7 +1536,7 @@ export default function StudentDashboard() {
           )}
         </section>
 
-        <section id="attendance" className="dashboard-card">
+        <section id="attendance" className="dashboard-card" hidden={activeView !== "attendance"}>
           <h2 className="card-title">Attendance Summary</h2>
 
           <div
@@ -1591,7 +1627,7 @@ export default function StudentDashboard() {
         </section>
       </section>
 
-      <section id="timetable" className="dashboard-card">
+      <section id="timetable" className="dashboard-card" hidden={activeView !== "timetable"}>
         <h2 className="card-title">Weekly Timetable</h2>
 
         {sortedTimetable.length === 0 ? (
@@ -1629,6 +1665,7 @@ export default function StudentDashboard() {
           </div>
         )}
       </section>
-    </main>
+      </div>
+    </PortalLayout>
   );
 }

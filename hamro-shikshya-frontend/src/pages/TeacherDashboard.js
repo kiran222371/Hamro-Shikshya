@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api, {
   createTask,
   getTasksByClass,
@@ -11,6 +12,7 @@ import api, {
   getNoticesByClass,
   getUsers,
 } from "../api";
+import PortalLayout from "../components/PortalLayout";
 import "../styles/App.css";
 
 const API_BASE_URL = (
@@ -26,6 +28,22 @@ const LOCAL_EXAMS_STORAGE_KEY = "hamro_shikshya_local_exams";
 const LOCAL_NOTICES_STORAGE_KEY = "hamro_shikshya_local_notices";
 
 const ATTENDANCE_STATUS_OPTIONS = ["Present", "Absent", "Late"];
+
+const TEACHER_NAVIGATION = [
+  { to: "/teacher/overview", label: "Overview", icon: "▦" },
+  { to: "/teacher/profile", label: "Profile", icon: "👤" },
+  { to: "/teacher/classes", label: "My Classes", icon: "🏫" },
+  { to: "/teacher/students", label: "Students", icon: "🎓" },
+  { to: "/teacher/homework", label: "Homework", icon: "📚" },
+  { to: "/teacher/submissions", label: "Submissions", icon: "✅" },
+  { to: "/teacher/attendance", label: "Attendance", icon: "🗓️" },
+  { to: "/teacher/exams", label: "Exams & Marks", icon: "📝" },
+  { to: "/teacher/notices", label: "Notices", icon: "📢" },
+];
+
+const TEACHER_VIEWS = new Set(
+  TEACHER_NAVIGATION.map((item) => item.to.split("/").filter(Boolean).pop())
+);
 
 const getToday = () => new Date().toISOString().slice(0, 10);
 
@@ -643,6 +661,21 @@ function EmptyState({ text }) {
 }
 
 export default function TeacherDashboard() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const activeView = useMemo(() => {
+    const segment = location.pathname.split("/").filter(Boolean)[1] || "overview";
+    return TEACHER_VIEWS.has(segment) ? segment : "overview";
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const segment = location.pathname.split("/").filter(Boolean)[1];
+
+    if (!segment || !TEACHER_VIEWS.has(segment)) {
+      navigate("/teacher/overview", { replace: true });
+    }
+  }, [location.pathname, navigate]);
   const savedUser = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "{}");
@@ -839,11 +872,9 @@ export default function TeacherDashboard() {
     setMessage("");
   };
 
-  const scrollToSection = (id) => {
-    document.getElementById(id)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
+  const openView = (view) => {
+    navigate(`/teacher/${view}`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const getStudentName = (studentIdOrObject) => {
@@ -1873,15 +1904,28 @@ export default function TeacherDashboard() {
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    window.location.href = "/#/login";
+    navigate("/login", { replace: true });
   };
 
   return (
-    <main style={styles.page}>
-      <div style={styles.shell}>
-        <section style={styles.hero}>
+    <PortalLayout
+      role="teacher"
+      portalName="Teacher Portal"
+      user={teacher}
+      navigation={TEACHER_NAVIGATION}
+      onLogout={logout}
+      headerMeta={
+        <>
+          <span className="portal-header-pill">
+            🏫 Class {currentClassName || "Not assigned"}
+            {currentSection ? ` · Section ${currentSection}` : ""}
+          </span>
+          {loading && <span className="portal-header-pill">Refreshing…</span>}
+        </>
+      }
+    >
+      <div className="portal-page-stack" style={styles.shell}>
+        <section style={styles.hero} hidden={activeView !== "overview"}>
           <div style={styles.heroGrid}>
             <div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1911,7 +1955,7 @@ export default function TeacherDashboard() {
                 <button
                   type="button"
                   style={styles.ghostButton}
-                  onClick={() => scrollToSection("homework")}
+                  onClick={() => openView("homework")}
                 >
                   Create Homework
                 </button>
@@ -1996,7 +2040,10 @@ export default function TeacherDashboard() {
           </div>
         </section>
 
-        <section style={styles.card}>
+        <section
+          style={styles.card}
+          hidden={!message && !error && Boolean(currentClassName)}
+        >
           {message && <div style={styles.success}>{message}</div>}
           {error && <div style={styles.error}>{error}</div>}
 
@@ -2007,32 +2054,9 @@ export default function TeacherDashboard() {
             </div>
           )}
 
-          <div style={styles.quickNav}>
-            <button style={styles.navButton} onClick={() => scrollToSection("profile")}>
-              👤 Profile
-            </button>
-            <button style={styles.navButton} onClick={() => scrollToSection("students")}>
-              👨‍🎓 Students
-            </button>
-            <button style={styles.navButton} onClick={() => scrollToSection("homework")}>
-              📚 Homework
-            </button>
-            <button style={styles.navButton} onClick={() => scrollToSection("submissions")}>
-              ✅ Submissions
-            </button>
-            <button style={styles.navButton} onClick={() => scrollToSection("attendance")}>
-              🗓️ Attendance
-            </button>
-            <button style={styles.navButton} onClick={() => scrollToSection("exams")}>
-              📝 Exams
-            </button>
-            <button style={styles.navButton} onClick={() => scrollToSection("notices")}>
-              📢 Notices
-            </button>
-          </div>
         </section>
 
-        <section style={styles.card}>
+        <section style={styles.card} hidden={activeView !== "overview"}>
           <SectionHeader
             icon="📊"
             title="Overview"
@@ -2057,7 +2081,7 @@ export default function TeacherDashboard() {
           </div>
         </section>
 
-        <section id="profile" style={styles.card}>
+        <section id="profile" style={styles.card} hidden={activeView !== "profile"}>
           <SectionHeader
             icon="👤"
             title="Teacher Profile"
@@ -2111,7 +2135,7 @@ export default function TeacherDashboard() {
           )}
         </section>
 
-        <section style={styles.card}>
+        <section style={styles.card} hidden={activeView !== "classes"}>
           <SectionHeader
             icon="🏫"
             title="My Assigned Classes"
@@ -2148,7 +2172,7 @@ export default function TeacherDashboard() {
           )}
         </section>
 
-        <section id="students" style={styles.card}>
+        <section id="students" style={styles.card} hidden={activeView !== "students"}>
           <SectionHeader
             icon="👨‍🎓"
             title="Student List"
@@ -2188,7 +2212,7 @@ export default function TeacherDashboard() {
           )}
         </section>
 
-        <section id="homework" style={styles.card}>
+        <section id="homework" style={styles.card} hidden={activeView !== "homework"}>
           <SectionHeader
             icon="📚"
             title="Homework Creation"
@@ -2257,7 +2281,7 @@ export default function TeacherDashboard() {
           </form>
         </section>
 
-        <section id="submissions" style={styles.card}>
+        <section id="submissions" style={styles.card} hidden={activeView !== "submissions"}>
           <SectionHeader
             icon="✅"
             title="Homework Submissions and Feedback"
@@ -2451,7 +2475,7 @@ export default function TeacherDashboard() {
           )}
         </section>
 
-        <section id="attendance" style={styles.card}>
+        <section id="attendance" style={styles.card} hidden={activeView !== "attendance"}>
           <SectionHeader
             icon="🗓️"
             title="Attendance"
@@ -2580,7 +2604,7 @@ export default function TeacherDashboard() {
           )}
         </section>
 
-        <section id="exams" style={styles.card}>
+        <section id="exams" style={styles.card} hidden={activeView !== "exams"}>
           <SectionHeader
             icon="📝"
             title="Create Exam"
@@ -2743,7 +2767,7 @@ export default function TeacherDashboard() {
           )}
         </section>
 
-        <section id="notices" style={styles.card}>
+        <section id="notices" style={styles.card} hidden={activeView !== "notices"}>
           <SectionHeader
             icon="📢"
             title="Create Notice"
@@ -2806,6 +2830,6 @@ export default function TeacherDashboard() {
           )}
         </section>
       </div>
-    </main>
+    </PortalLayout>
   );
 }

@@ -14,8 +14,13 @@ import examRoutes from "./routes/exam.js";
 import noticeRoutes from "./routes/notice.js";
 import subjectRoutes from "./routes/subjects.js";
 import schoolRoutes from "./routes/school.js";
+import notificationRoutes from "./routes/notifications.js";
 
 import School from "./models/School.js";
+import {
+  createNotification,
+  notifyClassStudents,
+} from "./services/notificationService.js";
 
 dotenv.config();
 
@@ -535,6 +540,153 @@ const registerTeacherDashboardRoutes = () => {
 
   app.post(
     [
+      "/api/attendance/bulk",
+      "/api/attendance/mark-bulk",
+      "/api/attendances/bulk",
+    ],
+    async (req, res) => {
+      try {
+        const body = req.body || {};
+        const records = Array.isArray(body.records)
+          ? body.records
+          : [];
+
+        if (records.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Attendance records are required.",
+          });
+        }
+
+        const savedRecords = [];
+        const collection = getCollection("attendances");
+
+        for (const rawRecord of records) {
+          const record = rawRecord || {};
+
+          const studentId = cleanText(
+            record.studentId || record.student
+          );
+
+          const className = cleanText(
+            record.className || record.class || body.className
+          );
+
+          const section = cleanText(
+            record.section || body.section
+          );
+
+          const schoolId = cleanText(
+            record.schoolId || body.schoolId
+          );
+
+          if (!studentId || !className || !schoolId) {
+            continue;
+          }
+
+          const status =
+            cleanText(record.status) || "Present";
+
+          const date =
+            cleanText(record.date || body.date) || getToday();
+
+          const teacherId = cleanText(
+            record.teacherId ||
+              record.markedBy ||
+              body.teacherId
+          );
+
+          const attendance = {
+            ...record,
+            studentId,
+            studentName: cleanText(
+              record.studentName || record.name
+            ),
+            classId: cleanText(
+              record.classId || body.classId
+            ),
+            className,
+            section,
+            status,
+            date,
+            schoolId,
+            teacherId,
+            markedBy: teacherId,
+            updatedAt: new Date(),
+          };
+
+          const result =
+            await collection.findOneAndUpdate(
+              {
+                studentId,
+                className,
+                section,
+                date,
+                schoolId,
+              },
+              {
+                $set: attendance,
+                $setOnInsert: {
+                  createdAt: new Date(),
+                },
+              },
+              {
+                upsert: true,
+                returnDocument: "after",
+              }
+            );
+
+          const savedAttendance =
+            result?.value || result || attendance;
+
+          savedRecords.push(savedAttendance);
+
+          await createNotification({
+            recipientId: studentId,
+            recipientRole: "student",
+            senderId: teacherId || null,
+            senderName: cleanText(
+              record.markedByName ||
+                record.teacherName ||
+                body.teacherName
+            ),
+            senderRole: "teacher",
+            schoolId,
+            type: "attendance_marked",
+            title: "Attendance Updated",
+            message: `Your attendance for ${date} was marked ${status}.`,
+            relatedId:
+              savedAttendance?._id || "",
+            relatedModel: "Attendance",
+            relatedRoute: "/student/attendance",
+            className,
+            section,
+            metadata: {
+              status,
+              date,
+            },
+          });
+        }
+
+        return res.status(201).json({
+          success: true,
+          message: "Attendance saved successfully.",
+          data: savedRecords,
+          attendance: savedRecords,
+          records: savedRecords,
+        });
+      } catch (error) {
+        return sendServerError(
+          res,
+          error,
+          "Failed to save attendance."
+        );
+      }
+    }
+  );
+
+  app.post(
+    [
       "/api/attendance/mark",
       "/api/attendance/create",
     ],
@@ -649,6 +801,31 @@ const registerTeacherDashboardRoutes = () => {
           result || {
             ...attendance,
           };
+
+        await createNotification({
+          recipientId: studentId,
+          recipientRole: "student",
+          senderId: teacherId || null,
+          senderName: cleanText(
+            body.markedByName ||
+              body.teacherName
+          ),
+          senderRole: "teacher",
+          schoolId,
+          type: "attendance_marked",
+          title: "Attendance Updated",
+          message: `Your attendance for ${date} was marked ${status}.`,
+          relatedId:
+            savedAttendance?._id || "",
+          relatedModel: "Attendance",
+          relatedRoute: "/student/attendance",
+          className,
+          section,
+          metadata: {
+            status,
+            date,
+          },
+        });
 
         return res.status(201).json({
           success: true,
@@ -831,6 +1008,28 @@ const registerTeacherDashboardRoutes = () => {
           ...exam,
         };
 
+        await notifyClassStudents({
+          schoolId,
+          className,
+          section,
+          senderId: teacherId || null,
+          senderName: cleanText(
+            body.teacherName
+          ),
+          senderRole: "teacher",
+          type: "exam_created",
+          title: "New Exam Scheduled",
+          message: `${subject} exam "${title}" has been scheduled for ${date || "an upcoming date"}.`,
+          relatedId: savedExam._id,
+          relatedModel: "Exam",
+          relatedRoute: "/student/exams",
+          metadata: {
+            subject,
+            date,
+            maxMarks,
+          },
+        });
+
         return res.status(201).json({
           success: true,
           message:
@@ -1005,6 +1204,21 @@ const registerTeacherDashboardRoutes = () => {
           _id: result.insertedId,
           ...notice,
         };
+
+        await notifyClassStudents({
+          schoolId,
+          className,
+          section,
+          senderId: teacherId || null,
+          senderName: teacherName,
+          senderRole: "teacher",
+          type: "notice_created",
+          title: title,
+          message: content,
+          relatedId: savedNotice._id,
+          relatedModel: "Notice",
+          relatedRoute: "/student/notices",
+        });
 
         return res.status(201).json({
           success: true,
@@ -1283,6 +1497,31 @@ const registerTeacherDashboardRoutes = () => {
             ...resultData,
           };
 
+        await createNotification({
+          recipientId: studentId,
+          recipientRole: "student",
+          senderId: teacherId || null,
+          senderName: cleanText(
+            body.teacherName
+          ),
+          senderRole: "teacher",
+          schoolId,
+          type: "result_published",
+          title: "Exam Result Published",
+          message: `Your ${subject || examTitle || "exam"} result is now available.`,
+          relatedId:
+            savedResult?._id || examId,
+          relatedModel: "Result",
+          relatedRoute: "/student/results",
+          className,
+          section,
+          metadata: {
+            examId,
+            obtainedMarks,
+            maxMarks,
+          },
+        });
+
         return res.status(201).json({
           success: true,
           message:
@@ -1373,6 +1612,40 @@ const registerTeacherDashboardRoutes = () => {
           result || {
             ...updateData,
           };
+
+        await createNotification({
+          recipientId: studentId,
+          recipientRole: "student",
+          senderId:
+            cleanText(body.teacherId) || null,
+          senderName: cleanText(
+            body.teacherName
+          ),
+          senderRole: "teacher",
+          schoolId,
+          type: "result_updated",
+          title: "Exam Result Updated",
+          message: `Your ${cleanText(
+            body.subject ||
+              body.examTitle ||
+              "exam"
+          )} result has been updated.`,
+          relatedId:
+            savedResult?._id || examId,
+          relatedModel: "Result",
+          relatedRoute: "/student/results",
+          className: cleanText(
+            body.className ||
+              body.class
+          ),
+          section: cleanText(
+            body.section
+          ),
+          metadata: {
+            examId,
+            obtainedMarks,
+          },
+        });
 
         return res.json({
           success: true,
@@ -1569,6 +1842,14 @@ const registerRoutes = async () => {
     the users route.
   */
   app.use("/api/users", userRoutes);
+
+  /*
+    Persistent notifications for Admin, Teacher and Student portals.
+  */
+  app.use(
+    "/api/notifications",
+    notificationRoutes
+  );
 
   app.use("/api/tasks", taskRoutes);
 

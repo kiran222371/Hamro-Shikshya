@@ -55,6 +55,46 @@ const submissionSchema = new mongoose.Schema(
       default: 0,
     },
 
+    status: {
+      type: String,
+      enum: [
+        "Submitted",
+        "Checked",
+        "Needs Improvement",
+        "Late",
+      ],
+      default: "Submitted",
+      trim: true,
+    },
+
+    marks: {
+      type: Number,
+      default: null,
+    },
+
+    feedback: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    checkedAt: {
+      type: Date,
+      default: null,
+    },
+
+    checkedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    teacherName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     submittedAt: {
       type: Date,
       default: Date.now,
@@ -159,6 +199,8 @@ taskSchema.index({ schoolId: 1, className: 1, section: 1 });
 taskSchema.index({ teacherId: 1 });
 taskSchema.index({ "submissions.studentId": 1 });
 
-const Task = mongoose.model("Task", taskSchema);
+const Task =
+  mongoose.models.Task ||
+  mongoose.model("Task", taskSchema);
 
 export default Task;
