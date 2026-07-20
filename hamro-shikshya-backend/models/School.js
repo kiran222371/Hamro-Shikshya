@@ -69,6 +69,7 @@ const locationSchema = new mongoose.Schema(
       type: String,
       enum: ["Point"],
       required: true,
+      default: "Point",
     },
 
     coordinates: {
@@ -83,7 +84,8 @@ const locationSchema = new mongoose.Schema(
             Number.isFinite(value[1])
           );
         },
-        message: "Location coordinates must be [longitude, latitude].",
+        message:
+          "Location coordinates must be an array like [longitude, latitude]",
       },
     },
   },
@@ -96,6 +98,14 @@ const schoolSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+    },
+
+    // Legacy field. Keep this because your old database previously used "name".
+    // This helps old code/database records remain compatible.
+    name: {
+      type: String,
+      trim: true,
+      default: "",
     },
 
     address: {
@@ -159,9 +169,38 @@ const schoolSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+schoolSchema.pre("validate", function (next) {
+  if (!this.name && this.schoolName) {
+    this.name = this.schoolName;
+  }
+
+  if (!this.schoolName && this.name) {
+    this.schoolName = this.name;
+  }
+
+  if (
+    this.addressDetails &&
+    Number.isFinite(Number(this.addressDetails.longitude)) &&
+    Number.isFinite(Number(this.addressDetails.latitude)) &&
+    !this.location
+  ) {
+    this.location = {
+      type: "Point",
+      coordinates: [
+        Number(this.addressDetails.longitude),
+        Number(this.addressDetails.latitude),
+      ],
+    };
+  }
+
+  next();
+});
+
 schoolSchema.index({ location: "2dsphere" });
 schoolSchema.index({ schoolName: 1 });
+schoolSchema.index({ name: 1 });
 
-const School = mongoose.models.School || mongoose.model("School", schoolSchema);
+const School =
+  mongoose.models.School || mongoose.model("School", schoolSchema);
 
 export default School;
