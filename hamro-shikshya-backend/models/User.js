@@ -23,6 +23,76 @@ const cleanStringArray = (values) => {
   ];
 };
 
+const cleanObjectIdArray = (values) => {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  const usedIds = new Set();
+
+  return values
+    .map((value) => {
+      if (value && typeof value === "object") {
+        return value._id || value.id || "";
+      }
+
+      return value;
+    })
+    .map((value) => cleanText(value))
+    .filter((value) => {
+      if (
+        !value ||
+        !mongoose.Types.ObjectId.isValid(value) ||
+        usedIds.has(value)
+      ) {
+        return false;
+      }
+
+      usedIds.add(value);
+      return true;
+    });
+};
+
+const normalizeStream = (value) => {
+  const cleanValue = cleanText(value);
+
+  if (!cleanValue) {
+    return "";
+  }
+
+  const normalized = cleanValue
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const streamMap = {
+    science: "Science",
+    management: "Management",
+    commerce: "Management",
+    humanities: "Humanities",
+    arts: "Humanities",
+    education: "Education",
+    law: "Law",
+    technical: "Technical",
+    vocational: "Technical",
+    "technical vocational": "Technical",
+    general: "General",
+  };
+
+  return (
+    streamMap[normalized] ||
+    cleanValue
+      .split(/\s+/)
+      .map(
+        (word) =>
+          word.charAt(0).toUpperCase() +
+          word.slice(1).toLowerCase()
+      )
+      .join(" ")
+  );
+};
+
 /* =====================================================
    TEACHER-ASSIGNED CLASS SCHEMA
 ===================================================== */
@@ -47,8 +117,31 @@ const assignedClassSchema = new mongoose.Schema(
       trim: true,
     },
 
+    stream: {
+      type: String,
+      trim: true,
+      default: "General",
+    },
+
+    /*
+      Legacy subject-name list retained for compatibility.
+    */
     subjects: {
       type: [String],
+      default: [],
+    },
+
+    /*
+      Central Subject records assigned to this teacher for
+      this class and section.
+    */
+    subjectIds: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Subject",
+        },
+      ],
       default: [],
     },
   },
@@ -231,12 +324,14 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: "",
+      index: true,
     },
 
     section: {
       type: String,
       trim: true,
       default: "",
+      index: true,
     },
 
     rollNumber: {
@@ -261,12 +356,61 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: "",
+      index: true,
     },
 
+    /*
+      For Classes 11 and 12 this should normally contain the
+      student's programme/stream, such as Science, Management,
+      Humanities, Education, Law or Technical.
+
+      It remains a flexible string because individual schools
+      may use additional programme names.
+    */
     stream: {
       type: String,
       trim: true,
       default: "",
+      index: true,
+    },
+
+    /*
+      Exact Subject records enrolled by the student.
+
+      This is especially important for Classes 11 and 12,
+      where students in the same stream may choose different
+      optional subjects.
+
+      Priority used by the subject API:
+      1. subjectIds when this array is not empty
+      2. otherwise the student's stream
+      3. General/common subjects are also included
+    */
+    subjectIds: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Subject",
+        },
+      ],
+      default: [],
+      index: true,
+    },
+
+    /*
+      Indicates whether the student's subject list should be
+      resolved from the stream or from the exact subjectIds.
+      The API can also infer "individual" whenever subjectIds
+      contains at least one Subject record.
+    */
+    subjectEnrollmentMode: {
+      type: String,
+      enum: {
+        values: ["stream", "individual"],
+        message:
+          "Subject enrollment mode must be stream or individual",
+      },
+      default: "stream",
     },
 
     studentStatus: {
@@ -305,14 +449,31 @@ const userSchema = new mongoose.Schema(
       default: "",
     },
 
+    /*
+      Legacy teacher subject-name list retained for
+      compatibility with existing records and frontend code.
+    */
     subjects: {
       type: [String],
       default: [],
     },
 
     /*
+      Central Subject records assigned to the teacher.
+    */
+    teacherSubjectIds: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Subject",
+        },
+      ],
+      default: [],
+    },
+
+    /*
       A teacher can be assigned to several classes,
-      sections and subjects.
+      sections, streams and subjects.
     */
     assignedClasses: {
       type: [assignedClassSchema],
@@ -372,33 +533,25 @@ userSchema.pre("validate", function () {
     this.address = cleanText(this.address);
   }
 
-  if (this.className) {
-    this.className = cleanText(this.className);
-  }
+  this.className = cleanText(this.className);
+  this.section = cleanText(this.section);
+  this.rollNumber = cleanText(this.rollNumber);
+  this.admissionNumber = cleanText(
+    this.admissionNumber
+  );
+  this.studentCode = cleanText(
+    this.studentCode
+  );
+  this.academicYear = cleanText(
+    this.academicYear
+  );
+  this.employeeId = cleanText(this.employeeId);
 
-  if (this.section) {
-    this.section = cleanText(this.section);
-  }
-
-  if (this.rollNumber) {
-    this.rollNumber = cleanText(this.rollNumber);
-  }
-
-  if (this.admissionNumber) {
-    this.admissionNumber = cleanText(
-      this.admissionNumber
-    );
-  }
-
-  if (this.studentCode) {
-    this.studentCode = cleanText(
-      this.studentCode
-    );
-  }
-
-  if (this.employeeId) {
-    this.employeeId = cleanText(this.employeeId);
-  }
+  /*
+    Normalize common stream names while still allowing
+    school-specific programme labels.
+  */
+  this.stream = normalizeStream(this.stream);
 
   /*
     Keep the old isActive field and the newer accountStatus
@@ -416,36 +569,89 @@ userSchema.pre("validate", function () {
   }
 
   /*
-    Remove empty and duplicate teacher subjects.
+    Remove empty and duplicate teacher subject names.
   */
   this.subjects = cleanStringArray(this.subjects);
 
   /*
+    Remove invalid and duplicate Subject references.
+  */
+  this.subjectIds = cleanObjectIdArray(
+    this.subjectIds
+  );
+
+  this.teacherSubjectIds =
+    cleanObjectIdArray(
+      this.teacherSubjectIds
+    );
+
+  /*
+    An exact student subject list automatically uses
+    individual enrollment mode.
+  */
+  if (
+    this.role === "student" &&
+    this.subjectIds.length > 0
+  ) {
+    this.subjectEnrollmentMode =
+      "individual";
+  }
+
+  /*
+    Classes 1-10 normally do not use a specialised stream.
+    Keep them on General unless the school intentionally
+    stores another programme name.
+  */
+  const classNumber = Number(this.className);
+
+  if (
+    this.role === "student" &&
+    classNumber >= 1 &&
+    classNumber <= 10 &&
+    !this.stream
+  ) {
+    this.stream = "General";
+  }
+
+  /*
     Clean and remove duplicate assigned classes.
 
-    A duplicate means the same class and section.
+    A duplicate means the same class, section and stream.
   */
   if (Array.isArray(this.assignedClasses)) {
     const usedClassSections = new Set();
 
     this.assignedClasses = this.assignedClasses
       .map((assignedClass) => {
-        const className = cleanText(
+        const assignedClassName = cleanText(
           assignedClass?.className
         );
 
-        const section = cleanText(
+        const assignedSection = cleanText(
           assignedClass?.section
         );
 
-        const subjects = cleanStringArray(
-          assignedClass?.subjects
-        );
+        const assignedStream =
+          normalizeStream(
+            assignedClass?.stream
+          ) || "General";
+
+        const assignedSubjects =
+          cleanStringArray(
+            assignedClass?.subjects
+          );
+
+        const assignedSubjectIds =
+          cleanObjectIdArray(
+            assignedClass?.subjectIds
+          );
 
         return {
-          className,
-          section,
-          subjects,
+          className: assignedClassName,
+          section: assignedSection,
+          stream: assignedStream,
+          subjects: assignedSubjects,
+          subjectIds: assignedSubjectIds,
         };
       })
       .filter((assignedClass) => {
@@ -456,8 +662,13 @@ userSchema.pre("validate", function () {
           return false;
         }
 
-        const classSectionKey =
-          `${assignedClass.className}-${assignedClass.section}`.toLowerCase();
+        const classSectionKey = [
+          assignedClass.className,
+          assignedClass.section,
+          assignedClass.stream,
+        ]
+          .join("-")
+          .toLowerCase();
 
         if (
           usedClassSections.has(classSectionKey)
@@ -485,9 +696,31 @@ userSchema.pre("validate", function () {
       {
         className: this.className,
         section: this.section,
+        stream:
+          normalizeStream(this.stream) ||
+          "General",
         subjects: this.subjects,
+        subjectIds:
+          this.teacherSubjectIds,
       },
     ];
+  }
+
+  /*
+    Build a top-level teacher Subject reference list from
+    assignedClasses when it is missing.
+  */
+  if (
+    this.role === "teacher" &&
+    this.teacherSubjectIds.length === 0
+  ) {
+    this.teacherSubjectIds =
+      cleanObjectIdArray(
+        this.assignedClasses.flatMap(
+          (assignedClass) =>
+            assignedClass.subjectIds || []
+        )
+      );
   }
 
   /*
@@ -526,13 +759,23 @@ userSchema.index({
 });
 
 /*
-  Used for class and section student searches.
+  Used for class, section and stream student searches.
 */
 userSchema.index({
   schoolId: 1,
   className: 1,
   section: 1,
+  stream: 1,
   role: 1,
+});
+
+/*
+  Used for finding students enrolled in a Subject.
+*/
+userSchema.index({
+  schoolId: 1,
+  role: 1,
+  subjectIds: 1,
 });
 
 /*
@@ -542,6 +785,16 @@ userSchema.index({
   schoolId: 1,
   "assignedClasses.className": 1,
   "assignedClasses.section": 1,
+  "assignedClasses.stream": 1,
+});
+
+/*
+  Used for finding teachers assigned to a Subject.
+*/
+userSchema.index({
+  schoolId: 1,
+  role: 1,
+  teacherSubjectIds: 1,
 });
 
 /*

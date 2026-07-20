@@ -145,6 +145,88 @@ const extractSchoolId = (value) => {
   return cleanText(value);
 };
 
+
+const extractEntityId = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return cleanText(value);
+  }
+
+  if (typeof value === "object") {
+    return cleanText(
+      value._id ||
+        value.id ||
+        value.value
+    );
+  }
+
+  return cleanText(value);
+};
+
+const normalizeArrayValue = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return [];
+  }
+
+  if (typeof value === "string") {
+    const cleanedValue = value.trim();
+
+    if (!cleanedValue) {
+      return [];
+    }
+
+    try {
+      const parsedValue = JSON.parse(
+        cleanedValue
+      );
+
+      if (Array.isArray(parsedValue)) {
+        return parsedValue;
+      }
+    } catch {
+      // Continue with comma-separated values.
+    }
+
+    return cleanedValue
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [value];
+};
+
+const cleanStringArray = (value) => {
+  return [
+    ...new Set(
+      normalizeArrayValue(value)
+        .map((item) => cleanText(item))
+        .filter(Boolean)
+    ),
+  ];
+};
+
+const cleanIdArray = (value) => {
+  return [
+    ...new Set(
+      normalizeArrayValue(value)
+        .map((item) => extractEntityId(item))
+        .filter(Boolean)
+    ),
+  ];
+};
+
 export const getCurrentSchoolId = () => {
   const user = getStoredUser();
 
@@ -573,6 +655,8 @@ export const getArrayFromApiResponse = (
   if (Array.isArray(body?.users)) return body.users;
   if (Array.isArray(body?.students)) return body.students;
   if (Array.isArray(body?.teachers)) return body.teachers;
+  if (Array.isArray(body?.subjects)) return body.subjects;
+  if (Array.isArray(body?.created)) return body.created;
   if (Array.isArray(body?.tasks)) return body.tasks;
   if (Array.isArray(body?.task)) return body.task;
   if (Array.isArray(body?.homework)) return body.homework;
@@ -815,16 +899,60 @@ const safeGetFirstNonEmpty = async (
 const prepareSubjectPayload = (
   data = {}
 ) => {
+  const subjectObject =
+    data.subject &&
+    typeof data.subject === "object"
+      ? data.subject
+      : data.selectedSubject &&
+        typeof data.selectedSubject === "object"
+      ? data.selectedSubject
+      : {};
+
   const subjectName = cleanText(
-    data.name || data.subjectName
+    data.name ||
+      data.subjectName ||
+      subjectObject.name ||
+      subjectObject.subjectName ||
+      (typeof data.subject === "string"
+        ? data.subject
+        : "")
   );
 
   const subjectCode = cleanText(
-    data.subjectCode || data.code
+    data.subjectCode ||
+      data.code ||
+      subjectObject.subjectCode ||
+      subjectObject.code
+  ).toUpperCase();
+
+  let sections = cleanStringArray(
+    data.sections
   );
 
-  const section =
+  const legacySection =
     cleanText(data.section) || "All";
+
+  if (sections.length === 0) {
+    sections = [legacySection];
+  }
+
+  if (
+    sections.some(
+      (item) =>
+        item.toLowerCase() === "all"
+    )
+  ) {
+    sections = ["All"];
+  }
+
+  const teacherIds = cleanIdArray([
+    ...normalizeArrayValue(
+      data.teacherIds
+    ),
+    ...(data.teacherId
+      ? [data.teacherId]
+      : []),
+  ]);
 
   return {
     ...data,
@@ -839,19 +967,73 @@ const prepareSubjectPayload = (
       data.className || data.class
     ),
 
-    section,
+    section:
+      sections[0] || "All",
+    sections,
 
-    stream: cleanText(data.stream),
+    stream:
+      cleanText(data.stream) ||
+      "General",
 
     type:
       data.type || "Compulsory",
+
+    educationLevel:
+      cleanText(data.educationLevel) ||
+      "General",
+
+    curriculumBoard:
+      cleanText(data.curriculumBoard) ||
+      "Nepal Curriculum / NEB",
+
+    curriculumVersion:
+      cleanText(
+        data.curriculumVersion
+      ),
+
+    academicYear:
+      cleanText(data.academicYear),
+
+    fullMarks:
+      data.fullMarks === "" ||
+      data.fullMarks === undefined ||
+      data.fullMarks === null
+        ? null
+        : Number(data.fullMarks),
+
+    passMarks:
+      data.passMarks === "" ||
+      data.passMarks === undefined ||
+      data.passMarks === null
+        ? null
+        : Number(data.passMarks),
+
+    creditHours:
+      data.creditHours === "" ||
+      data.creditHours === undefined ||
+      data.creditHours === null
+        ? null
+        : Number(data.creditHours),
+
+    description:
+      cleanText(data.description),
+
+    sortOrder:
+      Number(data.sortOrder || 0),
+
+    isActive:
+      data.isActive === undefined
+        ? true
+        : Boolean(data.isActive),
 
     schoolId:
       extractSchoolId(data.schoolId) ||
       getCurrentSchoolId(),
 
     teacherId:
-      data.teacherId || null,
+      teacherIds[0] || null,
+
+    teacherIds,
   };
 };
 
@@ -863,20 +1045,40 @@ const prepareBulkSubjectsPayload = (
       subjects: data.map(
         prepareSubjectPayload
       ),
+
+      schoolId:
+        getCurrentSchoolId(),
     };
   }
 
   if (Array.isArray(data?.subjects)) {
-    return {
-      ...data,
+    const {
+      subjects,
+      ...sharedValues
+    } = data;
 
-      subjects: data.subjects.map(
-        prepareSubjectPayload
+    return {
+      ...sharedValues,
+
+      schoolId:
+        extractSchoolId(
+          sharedValues.schoolId
+        ) ||
+        getCurrentSchoolId(),
+
+      subjects: subjects.map(
+        (subject) =>
+          prepareSubjectPayload({
+            ...sharedValues,
+            ...subject,
+          })
       ),
     };
   }
 
-  return data;
+  return prepareSubjectPayload(
+    data || {}
+  );
 };
 
 const prepareTaskPayload = (
@@ -896,9 +1098,35 @@ const prepareTaskPayload = (
       data.homeworkTitle
   );
 
-  const subject = cleanText(
-    data.subject || data.subjectName
+  const subjectObject =
+    data.subject &&
+    typeof data.subject === "object"
+      ? data.subject
+      : data.selectedSubject &&
+        typeof data.selectedSubject === "object"
+      ? data.selectedSubject
+      : {};
+
+  const subjectId = extractEntityId(
+    data.subjectId ||
+      subjectObject._id ||
+      subjectObject.id
   );
+
+  const subjectName = cleanText(
+    data.subjectName ||
+      subjectObject.name ||
+      subjectObject.subjectName ||
+      (typeof data.subject === "string"
+        ? data.subject
+        : "")
+  );
+
+  const subjectCode = cleanText(
+    data.subjectCode ||
+      subjectObject.subjectCode ||
+      subjectObject.code
+  ).toUpperCase();
 
   const description = cleanText(
     data.description ||
@@ -930,8 +1158,15 @@ const prepareTaskPayload = (
     taskTitle: title,
     homeworkTitle: title,
 
-    subject,
-    subjectName: subject,
+    subjectId,
+    subject: subjectName,
+    subjectName,
+    subjectCode,
+
+    stream:
+      cleanText(data.stream),
+    academicYear:
+      cleanText(data.academicYear),
 
     description,
     instructions: description,
@@ -955,7 +1190,9 @@ const prepareTaskPayload = (
       getCurrentSchoolId(),
 
     teacherId:
-      data.teacherId || "",
+      extractEntityId(
+        data.teacherId
+      ),
 
     teacherName:
       data.teacherName || "",
@@ -1176,9 +1413,35 @@ const prepareExamPayload = (
       data.name
   );
 
-  const subject = cleanText(
-    data.subject
+  const subjectObject =
+    data.subject &&
+    typeof data.subject === "object"
+      ? data.subject
+      : data.selectedSubject &&
+        typeof data.selectedSubject === "object"
+      ? data.selectedSubject
+      : {};
+
+  const subjectId = extractEntityId(
+    data.subjectId ||
+      subjectObject._id ||
+      subjectObject.id
   );
+
+  const subjectName = cleanText(
+    data.subjectName ||
+      subjectObject.name ||
+      subjectObject.subjectName ||
+      (typeof data.subject === "string"
+        ? data.subject
+        : "")
+  );
+
+  const subjectCode = cleanText(
+    data.subjectCode ||
+      subjectObject.subjectCode ||
+      subjectObject.code
+  ).toUpperCase();
 
   const className = cleanText(
     data.className ||
@@ -1202,7 +1465,15 @@ const prepareExamPayload = (
     examTitle: title,
     name: title,
 
-    subject,
+    subjectId,
+    subject: subjectName,
+    subjectName,
+    subjectCode,
+
+    stream:
+      cleanText(data.stream),
+    academicYear:
+      cleanText(data.academicYear),
 
     classId:
       data.classId ||
@@ -1231,7 +1502,9 @@ const prepareExamPayload = (
       getCurrentSchoolId(),
 
     teacherId:
-      data.teacherId || "",
+      extractEntityId(
+        data.teacherId
+      ),
 
     teacherName:
       data.teacherName || "",
@@ -1261,6 +1534,45 @@ const prepareNoticePayload = (
     data.section
   );
 
+  const subjectObject =
+    data.subject &&
+    typeof data.subject === "object"
+      ? data.subject
+      : data.selectedSubject &&
+        typeof data.selectedSubject === "object"
+      ? data.selectedSubject
+      : {};
+
+  const subjectId = extractEntityId(
+    data.subjectId ||
+      subjectObject._id ||
+      subjectObject.id
+  );
+
+  const subjectName = cleanText(
+    data.subjectName ||
+      subjectObject.name ||
+      subjectObject.subjectName ||
+      (typeof data.subject === "string"
+        ? data.subject
+        : "")
+  );
+
+  const subjectCode = cleanText(
+    data.subjectCode ||
+      subjectObject.subjectCode ||
+      subjectObject.code
+  ).toUpperCase();
+
+  const noticeScope =
+    cleanText(
+      data.noticeScope ||
+        data.scope
+    ).toLowerCase() ||
+    (subjectId || subjectName
+      ? "subject"
+      : "class");
+
   return {
     ...data,
 
@@ -1270,6 +1582,15 @@ const prepareNoticePayload = (
     content,
     message: content,
     description: content,
+
+    noticeScope,
+    scope: noticeScope,
+
+    subjectId,
+    subject:
+      subjectName,
+    subjectName,
+    subjectCode,
 
     classId:
       data.classId ||
@@ -1287,7 +1608,9 @@ const prepareNoticePayload = (
       getCurrentSchoolId(),
 
     teacherId:
-      data.teacherId || "",
+      extractEntityId(
+        data.teacherId
+      ),
 
     teacherName:
       data.teacherName || "",
@@ -1833,26 +2156,78 @@ export const geocodeAddress = (
 
 
 export const getSubjects = (
-  schoolId = ""
+  options = {}
 ) => {
-  const cleanSchoolId =
-    extractSchoolId(schoolId) ||
-    getCurrentSchoolId();
+  const normalizedOptions =
+    typeof options === "string"
+      ? {
+          schoolId: options,
+        }
+      : options || {};
 
-  if (cleanSchoolId) {
+  const schoolId =
+    extractSchoolId(
+      normalizedOptions.schoolId
+    ) || getCurrentSchoolId();
+
+  const query = buildQueryString({
+    schoolId,
+    className: cleanText(
+      normalizedOptions.className ||
+        normalizedOptions.class
+    ),
+    section: cleanText(
+      normalizedOptions.section
+    ),
+    stream: cleanText(
+      normalizedOptions.stream
+    ),
+    type: cleanText(
+      normalizedOptions.type
+    ),
+    academicYear: cleanText(
+      normalizedOptions.academicYear
+    ),
+    teacherId: extractEntityId(
+      normalizedOptions.teacherId
+    ),
+    activeOnly:
+      normalizedOptions.activeOnly ===
+      undefined
+        ? ""
+        : String(
+            Boolean(
+              normalizedOptions.activeOnly
+            )
+          ),
+    isActive:
+      normalizedOptions.isActive ===
+      undefined
+        ? ""
+        : String(
+            Boolean(
+              normalizedOptions.isActive
+            )
+          ),
+    search: cleanText(
+      normalizedOptions.search ||
+        normalizedOptions.q
+    ),
+  });
+
+  if (schoolId) {
     return safeGetFirstNonEmpty(
       [
-        `/subjects/school/${cleanSchoolId}`,
+        `/subjects/school/${encodeURIComponent(
+          schoolId
+        )}${query}`,
 
-        `/subject/school/${cleanSchoolId}`,
+        `/subject/school/${encodeURIComponent(
+          schoolId
+        )}${query}`,
 
-        `/subjects?schoolId=${encodeURIComponent(
-          cleanSchoolId
-        )}`,
-
-        `/subject?schoolId=${encodeURIComponent(
-          cleanSchoolId
-        )}`,
+        `/subjects${query}`,
+        `/subject${query}`,
       ],
       []
     );
@@ -1860,8 +2235,152 @@ export const getSubjects = (
 
   return safeGetFirstNonEmpty(
     [
-      "/subjects",
-      "/subject",
+      `/subjects${query}`,
+      `/subject${query}`,
+    ],
+    []
+  );
+};
+
+export const getSubjectsByClass = (
+  className,
+  section = "",
+  options = {}
+) =>
+  getSubjects({
+    ...options,
+    className,
+    section,
+  });
+
+export const getTeacherSubjects = (
+  teacherId,
+  options = {}
+) => {
+  const cleanTeacherId =
+    extractEntityId(teacherId);
+
+  if (!cleanTeacherId) {
+    return Promise.resolve({
+      data: {
+        subjects: [],
+        data: [],
+      },
+    });
+  }
+
+  const query = buildQueryString({
+    className: cleanText(
+      options.className ||
+        options.class
+    ),
+    section: cleanText(
+      options.section
+    ),
+    stream: cleanText(
+      options.stream
+    ),
+    academicYear: cleanText(
+      options.academicYear
+    ),
+  });
+
+  return safeGetFirstNonEmpty(
+    [
+      `/subjects/teacher/${encodeURIComponent(
+        cleanTeacherId
+      )}${query}`,
+
+      `/subject/teacher/${encodeURIComponent(
+        cleanTeacherId
+      )}${query}`,
+
+      `/subjects${buildQueryString({
+        teacherId: cleanTeacherId,
+        className: cleanText(
+          options.className ||
+            options.class
+        ),
+        section: cleanText(
+          options.section
+        ),
+        stream: cleanText(
+          options.stream
+        ),
+        academicYear: cleanText(
+          options.academicYear
+        ),
+        activeOnly: true,
+      })}`,
+    ],
+    []
+  );
+};
+
+export const getStudentSubjects = (
+  studentId
+) => {
+  const cleanStudentId =
+    extractEntityId(studentId);
+
+  if (!cleanStudentId) {
+    return Promise.resolve({
+      data: {
+        subjects: [],
+        data: [],
+      },
+    });
+  }
+
+  return safeGetFirstNonEmpty(
+    [
+      `/subjects/student/${encodeURIComponent(
+        cleanStudentId
+      )}`,
+
+      `/subject/student/${encodeURIComponent(
+        cleanStudentId
+      )}`,
+    ],
+    []
+  );
+};
+
+export const getNepalSubjectTemplates = (
+  options = {}
+) => {
+  const sections = cleanStringArray(
+    options.sections
+  );
+
+  const query = buildQueryString({
+    className: cleanText(
+      options.className ||
+        options.class
+    ),
+    section:
+      cleanText(options.section) ||
+      "All",
+    sections:
+      sections.length > 0
+        ? JSON.stringify(sections)
+        : "",
+    stream:
+      cleanText(options.stream) ||
+      "General",
+    academicYear: cleanText(
+      options.academicYear
+    ),
+    curriculumVersion:
+      cleanText(
+        options.curriculumVersion
+      ),
+  });
+
+  return safeGetFirstNonEmpty(
+    [
+      `/subjects/templates/nepal${query}`,
+      `/subject/templates/nepal${query}`,
     ],
     []
   );
@@ -2000,7 +2519,8 @@ export const createTask = (
 
 export const getTasksByClass = (
   className,
-  section = ""
+  section = "",
+  options = {}
 ) => {
   const cleanClassName =
     cleanText(className);
@@ -2014,54 +2534,78 @@ export const getTasksByClass = (
       cleanSection
     );
 
+  const subjectId =
+    extractEntityId(
+      options.subjectId
+    );
+
+  const subjectName = cleanText(
+    options.subjectName ||
+      options.subject
+  );
+
+  const subjectCode = cleanText(
+    options.subjectCode
+  );
+
+  const classQuery =
+    buildQueryString({
+      section: cleanSection,
+      subjectId,
+      subjectName,
+      subjectCode,
+      academicYear: cleanText(
+        options.academicYear
+      ),
+    });
+
   const query = buildQueryString({
     section: cleanSection,
     className: cleanClassName,
     class: cleanClassName,
     classId,
+    subjectId,
+    subjectName,
+    subject: subjectName,
+    subjectCode,
+    academicYear: cleanText(
+      options.academicYear
+    ),
   });
 
   return safeGetFirstNonEmpty(
     [
       `/tasks/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${classQuery}`,
 
       `/tasks/class/${encodeURIComponent(
         classId
-      )}`,
+      )}${classQuery}`,
 
       `/task/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${classQuery}`,
 
       `/task/class/${encodeURIComponent(
         classId
-      )}`,
+      )}${classQuery}`,
 
       `/homework/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${classQuery}`,
 
       `/homework/class/${encodeURIComponent(
         classId
-      )}`,
+      )}${classQuery}`,
 
       `/homeworks/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${classQuery}`,
 
       `/homeworks/class/${encodeURIComponent(
         classId
-      )}`,
+      )}${classQuery}`,
 
       `/tasks${query}`,
       `/task${query}`,
@@ -2071,6 +2615,25 @@ export const getTasksByClass = (
     []
   );
 };
+
+export const getTasksBySubject = ({
+  className,
+  section = "",
+  subjectId = "",
+  subjectName = "",
+  subjectCode = "",
+  academicYear = "",
+} = {}) =>
+  getTasksByClass(
+    className,
+    section,
+    {
+      subjectId,
+      subjectName,
+      subjectCode,
+      academicYear,
+    }
+  );
 
 export const submitHomework = (
   taskId,
@@ -2367,7 +2930,8 @@ export const createExam = (
 
 export const getExamsByClass = (
   className,
-  section = ""
+  section = "",
+  options = {}
 ) => {
   const cleanClassName =
     cleanText(className);
@@ -2381,11 +2945,37 @@ export const getExamsByClass = (
       cleanSection
     );
 
+  const subjectId =
+    extractEntityId(
+      options.subjectId
+    );
+
+  const subjectName = cleanText(
+    options.subjectName ||
+      options.subject
+  );
+
+  const subjectCode = cleanText(
+    options.subjectCode
+  );
+
+  const classQuery =
+    buildQueryString({
+      section: cleanSection,
+      subjectId,
+      subjectName,
+      subjectCode,
+    });
+
   const query = buildQueryString({
     className: cleanClassName,
     class: cleanClassName,
     classId,
     section: cleanSection,
+    subjectId,
+    subjectName,
+    subject: subjectName,
+    subjectCode,
   });
 
   const sectionPath =
@@ -2399,23 +2989,19 @@ export const getExamsByClass = (
     [
       `/exams/class/${encodeURIComponent(
         classId
-      )}`,
+      )}${classQuery}`,
 
       `/exam/class/${encodeURIComponent(
         classId
-      )}`,
+      )}${classQuery}`,
 
       `/exams/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${classQuery}`,
 
       `/exam/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${classQuery}`,
 
       `/exams/class/${encodeURIComponent(
         cleanClassName
@@ -2568,7 +3154,8 @@ export const createNotice = (
 
 export const getNoticesByClass = (
   className,
-  section = ""
+  section = "",
+  options = {}
 ) => {
   const cleanClassName =
     cleanText(className);
@@ -2582,11 +3169,39 @@ export const getNoticesByClass = (
       cleanSection
     );
 
+  const subjectId =
+    extractEntityId(
+      options.subjectId
+    );
+
+  const subjectName = cleanText(
+    options.subjectName ||
+      options.subject
+  );
+
+  const classQuery =
+    buildQueryString({
+      section: cleanSection,
+      subjectId,
+      subjectName,
+      noticeScope:
+        cleanText(
+          options.noticeScope
+        ),
+    });
+
   const query = buildQueryString({
     className: cleanClassName,
     class: cleanClassName,
     classId,
     section: cleanSection,
+    subjectId,
+    subjectName,
+    subject: subjectName,
+    noticeScope:
+      cleanText(
+        options.noticeScope
+      ),
   });
 
   const sectionPath =
@@ -2600,23 +3215,19 @@ export const getNoticesByClass = (
     [
       `/notices/class/${encodeURIComponent(
         classId
-      )}`,
+      )}${classQuery}`,
 
       `/notice/class/${encodeURIComponent(
         classId
-      )}`,
+      )}${classQuery}`,
 
       `/notices/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${classQuery}`,
 
       `/notice/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${classQuery}`,
 
       `/notices/class/${encodeURIComponent(
         cleanClassName
@@ -2670,9 +3281,335 @@ export const getNoticesBySchool = (
 
 
 
+const prepareTimetablePayload = (
+  data = {}
+) => {
+  const subjectObject =
+    data.subject &&
+    typeof data.subject === "object"
+      ? data.subject
+      : data.selectedSubject &&
+        typeof data.selectedSubject === "object"
+      ? data.selectedSubject
+      : {};
+
+  const teacherObject =
+    data.teacher &&
+    typeof data.teacher === "object"
+      ? data.teacher
+      : data.selectedTeacher &&
+        typeof data.selectedTeacher === "object"
+      ? data.selectedTeacher
+      : {};
+
+  const className = cleanText(
+    data.className ||
+      data.class
+  );
+
+  const section = cleanText(
+    data.section
+  );
+
+  const classNumber = Number(
+    className
+  );
+
+  const stream =
+    classNumber >= 11
+      ? cleanText(
+          data.stream
+        ) || "General"
+      : "General";
+
+  const subjectId =
+    extractEntityId(
+      data.subjectId ||
+        subjectObject._id ||
+        subjectObject.id
+    );
+
+  const subjectName =
+    cleanText(
+      data.subjectName ||
+        subjectObject.name ||
+        subjectObject.subjectName ||
+        (typeof data.subject === "string"
+          ? data.subject
+          : "")
+    );
+
+  const subjectCode =
+    cleanText(
+      data.subjectCode ||
+        subjectObject.subjectCode ||
+        subjectObject.code
+    ).toUpperCase();
+
+  const teacherId =
+    extractEntityId(
+      data.teacherId ||
+        teacherObject._id ||
+        teacherObject.id
+    );
+
+  const teacherName =
+    cleanText(
+      data.teacherName ||
+        teacherObject.name
+    );
+
+  return withSchoolId({
+    ...data,
+
+    className,
+    class: className,
+    section,
+    classId:
+      data.classId ||
+      buildClassId(
+        className,
+        section
+      ),
+
+    stream,
+    academicYear:
+      cleanText(
+        data.academicYear
+      ),
+
+    dayOfWeek:
+      cleanText(
+        data.dayOfWeek ||
+          data.day
+      ),
+
+    day:
+      cleanText(
+        data.day ||
+          data.dayOfWeek
+      ),
+
+    startTime:
+      cleanText(
+        data.startTime ||
+          data.start
+      ),
+
+    endTime:
+      cleanText(
+        data.endTime ||
+          data.end
+      ),
+
+    periodNumber:
+      data.periodNumber === "" ||
+      data.periodNumber === undefined ||
+      data.periodNumber === null
+        ? null
+        : Number(
+            data.periodNumber
+          ),
+
+    subjectId,
+    subject:
+      subjectName,
+    subjectName,
+    subjectCode,
+
+    teacherId,
+    teacher:
+      teacherId,
+    teacherName,
+
+    room:
+      cleanText(data.room),
+
+    classType:
+      cleanText(
+        data.classType ||
+          data.type
+      ) ||
+      "Regular Class",
+
+    notes:
+      cleanText(
+        data.notes ||
+          data.description
+      ),
+
+    description:
+      cleanText(
+        data.description ||
+          data.notes
+      ),
+
+    validFrom:
+      data.validFrom || null,
+
+    validUntil:
+      data.validUntil || null,
+
+    isActive:
+      data.isActive === undefined
+        ? true
+        : Boolean(
+            data.isActive
+          ),
+  });
+};
+
+export const createTimetable = (
+  data
+) => {
+  const payload =
+    prepareTimetablePayload(
+      data
+    );
+
+  return requestWithFallback([
+    {
+      method: "post",
+      url: "/timetable/create",
+      data: payload,
+    },
+
+    {
+      method: "post",
+      url: "/timetable",
+      data: payload,
+    },
+
+    {
+      method: "post",
+      url: "/timetables/create",
+      data: payload,
+    },
+
+    {
+      method: "post",
+      url: "/timetables",
+      data: payload,
+    },
+  ]);
+};
+
+export const createTimetableEntry =
+  createTimetable;
+
+export const bulkCreateTimetable = (
+  entries = []
+) => {
+  const preparedEntries =
+    normalizeArrayValue(entries).map(
+      (entry) =>
+        prepareTimetablePayload(
+          entry
+        )
+    );
+
+  return requestWithFallback([
+    {
+      method: "post",
+      url: "/timetable/bulk",
+
+      data: {
+        entries:
+          preparedEntries,
+      },
+    },
+
+    {
+      method: "post",
+      url: "/timetables/bulk",
+
+      data: {
+        entries:
+          preparedEntries,
+      },
+    },
+  ]);
+};
+
+export const getTimetable = (
+  options = {}
+) => {
+  const query =
+    buildQueryString({
+      className:
+        cleanText(
+          options.className ||
+            options.class
+        ),
+
+      section:
+        cleanText(
+          options.section
+        ),
+
+      stream:
+        cleanText(
+          options.stream
+        ),
+
+      academicYear:
+        cleanText(
+          options.academicYear
+        ),
+
+      dayOfWeek:
+        cleanText(
+          options.dayOfWeek ||
+            options.day
+        ),
+
+      teacherId:
+        extractEntityId(
+          options.teacherId
+        ),
+
+      subjectId:
+        extractEntityId(
+          options.subjectId
+        ),
+
+      date:
+        options.date || "",
+
+      currentOnly:
+        options.currentOnly ===
+        undefined
+          ? ""
+          : String(
+              Boolean(
+                options.currentOnly
+              )
+            ),
+
+      includeInactive:
+        options.includeInactive ===
+        undefined
+          ? ""
+          : String(
+              Boolean(
+                options.includeInactive
+              )
+            ),
+    });
+
+  return safeGetFirstNonEmpty(
+    [
+      `/timetable${query}`,
+      `/timetables${query}`,
+    ],
+    []
+  );
+};
+
 export const getTimetableByClass = (
   className,
-  section = ""
+  section = "",
+  options = {}
 ) => {
   const cleanClassName =
     cleanText(className);
@@ -2686,63 +3623,344 @@ export const getTimetableByClass = (
       cleanSection
     );
 
-  const query = buildQueryString({
-    className: cleanClassName,
-    class: cleanClassName,
-    classId,
-    section: cleanSection,
-  });
+  const query =
+    buildQueryString({
+      section:
+        cleanSection,
+
+      stream:
+        cleanText(
+          options.stream
+        ),
+
+      academicYear:
+        cleanText(
+          options.academicYear
+        ),
+
+      dayOfWeek:
+        cleanText(
+          options.dayOfWeek ||
+            options.day
+        ),
+
+      date:
+        options.date || "",
+
+      currentOnly:
+        options.currentOnly ===
+        undefined
+          ? ""
+          : String(
+              Boolean(
+                options.currentOnly
+              )
+            ),
+
+      includeInactive:
+        options.includeInactive ===
+        undefined
+          ? ""
+          : String(
+              Boolean(
+                options.includeInactive
+              )
+            ),
+    });
+
+  const generalQuery =
+    buildQueryString({
+      className:
+        cleanClassName,
+      class:
+        cleanClassName,
+      classId,
+      section:
+        cleanSection,
+      stream:
+        cleanText(
+          options.stream
+        ),
+      academicYear:
+        cleanText(
+          options.academicYear
+        ),
+      dayOfWeek:
+        cleanText(
+          options.dayOfWeek ||
+            options.day
+        ),
+      date:
+        options.date || "",
+    });
 
   return safeGetFirstNonEmpty(
     [
       `/timetable/class/${encodeURIComponent(
         classId
-      )}`,
+      )}${query}`,
 
       `/timetables/class/${encodeURIComponent(
         classId
-      )}`,
-
-      `/routine/class/${encodeURIComponent(
-        classId
-      )}`,
-
-      `/routines/class/${encodeURIComponent(
-        classId
-      )}`,
+      )}${query}`,
 
       `/timetable/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${query}`,
 
       `/timetables/class/${encodeURIComponent(
         cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+      )}${query}`,
 
       `/routine/class/${encodeURIComponent(
-        cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+        classId
+      )}${query}`,
 
       `/routines/class/${encodeURIComponent(
-        cleanClassName
-      )}${buildQueryString({
-        section: cleanSection,
-      })}`,
+        classId
+      )}${query}`,
 
-      `/timetable${query}`,
-      `/timetables${query}`,
-      `/routine${query}`,
-      `/routines${query}`,
+      `/timetable${generalQuery}`,
+      `/timetables${generalQuery}`,
+      `/routine${generalQuery}`,
+      `/routines${generalQuery}`,
     ],
     []
   );
 };
+
+export const getTimetableByStudent = (
+  studentId,
+  options = {}
+) => {
+  const cleanStudentId =
+    extractEntityId(
+      studentId
+    );
+
+  if (!cleanStudentId) {
+    return Promise.resolve({
+      data: {
+        timetable: [],
+        data: [],
+      },
+    });
+  }
+
+  const query =
+    buildQueryString({
+      academicYear:
+        cleanText(
+          options.academicYear
+        ),
+
+      dayOfWeek:
+        cleanText(
+          options.dayOfWeek ||
+            options.day
+        ),
+
+      date:
+        options.date || "",
+
+      currentOnly:
+        options.currentOnly ===
+        undefined
+          ? ""
+          : String(
+              Boolean(
+                options.currentOnly
+              )
+            ),
+    });
+
+  return safeGetFirstNonEmpty(
+    [
+      `/timetable/student/${encodeURIComponent(
+        cleanStudentId
+      )}${query}`,
+
+      `/timetables/student/${encodeURIComponent(
+        cleanStudentId
+      )}${query}`,
+    ],
+    []
+  );
+};
+
+export const getTimetableByTeacher = (
+  teacherId,
+  options = {}
+) => {
+  const cleanTeacherId =
+    extractEntityId(
+      teacherId
+    );
+
+  if (!cleanTeacherId) {
+    return Promise.resolve({
+      data: {
+        timetable: [],
+        data: [],
+      },
+    });
+  }
+
+  const query =
+    buildQueryString({
+      academicYear:
+        cleanText(
+          options.academicYear
+        ),
+
+      dayOfWeek:
+        cleanText(
+          options.dayOfWeek ||
+            options.day
+        ),
+
+      date:
+        options.date || "",
+
+      currentOnly:
+        options.currentOnly ===
+        undefined
+          ? ""
+          : String(
+              Boolean(
+                options.currentOnly
+              )
+            ),
+
+      includeInactive:
+        options.includeInactive ===
+        undefined
+          ? ""
+          : String(
+              Boolean(
+                options.includeInactive
+              )
+            ),
+    });
+
+  return safeGetFirstNonEmpty(
+    [
+      `/timetable/teacher/${encodeURIComponent(
+        cleanTeacherId
+      )}${query}`,
+
+      `/timetables/teacher/${encodeURIComponent(
+        cleanTeacherId
+      )}${query}`,
+    ],
+    []
+  );
+};
+
+export const getTimetableEntry = (
+  timetableId
+) => {
+  const cleanId =
+    extractEntityId(
+      timetableId
+    );
+
+  if (!cleanId) {
+    return Promise.reject(
+      new Error(
+        "Timetable ID is required."
+      )
+    );
+  }
+
+  return requestWithFallback([
+    {
+      method: "get",
+      url: `/timetable/entry/${cleanId}`,
+    },
+
+    {
+      method: "get",
+      url: `/timetables/entry/${cleanId}`,
+    },
+  ]);
+};
+
+export const updateTimetable = (
+  timetableId,
+  data
+) => {
+  const cleanId =
+    extractEntityId(
+      timetableId
+    );
+
+  const payload =
+    prepareTimetablePayload(
+      data
+    );
+
+  return requestWithFallback([
+    {
+      method: "put",
+      url: `/timetable/${cleanId}`,
+      data: payload,
+    },
+
+    {
+      method: "patch",
+      url: `/timetable/${cleanId}`,
+      data: payload,
+    },
+
+    {
+      method: "put",
+      url: `/timetables/${cleanId}`,
+      data: payload,
+    },
+
+    {
+      method: "patch",
+      url: `/timetables/${cleanId}`,
+      data: payload,
+    },
+  ]);
+};
+
+export const updateTimetableEntry =
+  updateTimetable;
+
+export const deleteTimetable = (
+  timetableId,
+  {
+    permanent = false,
+  } = {}
+) => {
+  const cleanId =
+    extractEntityId(
+      timetableId
+    );
+
+  const query =
+    permanent
+      ? "?permanent=true"
+      : "";
+
+  return requestWithFallback([
+    {
+      method: "delete",
+      url: `/timetable/${cleanId}${query}`,
+    },
+
+    {
+      method: "delete",
+      url: `/timetables/${cleanId}${query}`,
+    },
+  ]);
+};
+
+export const deleteTimetableEntry =
+  deleteTimetable;
 
 
 /* =====================================================

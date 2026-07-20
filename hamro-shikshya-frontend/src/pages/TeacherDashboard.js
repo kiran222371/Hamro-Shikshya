@@ -11,6 +11,8 @@ import api, {
   createNotice,
   getNoticesByClass,
   getUsers,
+  getTeacherSubjects,
+  getSubjectsByClass,
 } from "../api";
 import PortalLayout from "../components/PortalLayout";
 import "../styles/App.css";
@@ -28,6 +30,21 @@ const LOCAL_EXAMS_STORAGE_KEY = "hamro_shikshya_local_exams";
 const LOCAL_NOTICES_STORAGE_KEY = "hamro_shikshya_local_notices";
 
 const ATTENDANCE_STATUS_OPTIONS = ["Present", "Absent", "Late"];
+
+const HOMEWORK_FILTER_OPTIONS = [
+  { id: "all", label: "All Homework", icon: "📁" },
+  { id: "recent", label: "Recently Added", icon: "🆕" },
+  { id: "due-soon", label: "Due Soon", icon: "⏰" },
+  { id: "past-due", label: "Past Due", icon: "⚠️" },
+  { id: "with-submissions", label: "With Submissions", icon: "📥" },
+];
+
+const SUBMISSION_FILTER_OPTIONS = [
+  { id: "all", label: "All Submissions", icon: "📂" },
+  { id: "new", label: "Needs Review", icon: "🆕" },
+  { id: "reviewed", label: "Reviewed", icon: "✅" },
+  { id: "late", label: "Late", icon: "⏰" },
+];
 
 const TEACHER_NAVIGATION = [
   { to: "/teacher/overview", label: "Overview", icon: "▦" },
@@ -62,6 +79,92 @@ const getSubmissionId = (submission) =>
   submission?.studentSubmissionId ||
   "";
 
+const getSubjectId = (subject) =>
+  String(
+    subject?._id ||
+      subject?.id ||
+      subject?.subjectId?._id ||
+      subject?.subjectId ||
+      ""
+  );
+
+const getSubjectName = (subject) =>
+  cleanText(
+    subject?.name ||
+      subject?.subjectName ||
+      subject?.subject ||
+      ""
+  );
+
+const getSubjectCode = (subject) =>
+  cleanText(
+    subject?.subjectCode ||
+      subject?.code ||
+      ""
+  );
+
+const getSubjectOptionValue = (subject) => {
+  const subjectId = getSubjectId(subject);
+
+  if (subjectId) {
+    return subjectId;
+  }
+
+  const name = getSubjectName(subject).toLowerCase();
+
+  return name ? `name:${name}` : "";
+};
+
+const getRecordSubjectId = (record) =>
+  String(
+    record?.subjectId?._id ||
+      record?.subjectId ||
+      record?.subject?._id ||
+      ""
+  );
+
+const getRecordSubjectName = (record) =>
+  cleanText(
+    record?.subjectName ||
+      (typeof record?.subject === "string"
+        ? record.subject
+        : record?.subject?.name) ||
+      record?.subjectTitle ||
+      ""
+  );
+
+const getRecordSubjectCode = (record) =>
+  cleanText(
+    record?.subjectCode ||
+      record?.code ||
+      record?.subject?.subjectCode ||
+      record?.subject?.code ||
+      ""
+  );
+
+const dedupeSubjects = (subjects = []) => {
+  const used = new Set();
+  const result = [];
+
+  subjects.forEach((subject) => {
+    const id = getSubjectId(subject);
+    const name = getSubjectName(subject).toLowerCase();
+    const code = getSubjectCode(subject).toLowerCase();
+    const key = id || `${name}::${code}`;
+
+    if (!key || used.has(key)) {
+      return;
+    }
+
+    used.add(key);
+    result.push(subject);
+  });
+
+  return result.sort((a, b) =>
+    getSubjectName(a).localeCompare(getSubjectName(b))
+  );
+};
+
 const safeReadStorage = (key, fallback) => {
   try {
     const raw = localStorage.getItem(key);
@@ -82,6 +185,11 @@ const safeWriteStorage = (key, value) => {
 
 const cleanText = (value) => String(value || "").trim();
 
+const hasValue = (value) =>
+  value !== undefined &&
+  value !== null &&
+  String(value).trim() !== "";
+
 const makeLocalId = () =>
   `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -90,6 +198,7 @@ const toArray = (res) => {
   if (Array.isArray(res?.data?.data)) return res.data.data;
   if (Array.isArray(res?.data?.users)) return res.data.users;
   if (Array.isArray(res?.data?.students)) return res.data.students;
+  if (Array.isArray(res?.data?.subjects)) return res.data.subjects;
   if (Array.isArray(res?.data?.tasks)) return res.data.tasks;
   if (Array.isArray(res?.data?.homework)) return res.data.homework;
   if (Array.isArray(res?.data?.submissions)) return res.data.submissions;
@@ -323,6 +432,107 @@ const mergeUniqueItems = (backendItems, localItems) => {
 
   return merged;
 };
+
+const getTaskTeacherId = (task) => {
+  if (!task) return "";
+
+  if (typeof task.teacherId === "object") {
+    return String(task.teacherId?._id || task.teacherId?.id || "");
+  }
+
+  return String(task.teacherId || task.createdBy || "");
+};
+
+const isTaskOwnedByTeacher = (task, teacherId) => {
+  const ownerId = getTaskTeacherId(task);
+  const cleanTeacherId = String(teacherId || "");
+
+  /*
+    Older homework records may not contain teacherId.
+    Keep those visible so existing project data is not lost.
+  */
+  if (!ownerId || !cleanTeacherId) return true;
+
+  return ownerId === cleanTeacherId;
+};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDisplayDate = (value, fallback = "No date") => {
+  const date = parseDateValue(value);
+
+  return date
+    ? date.toLocaleDateString(undefined, {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : fallback;
+};
+
+const formatDisplayDateTime = (value, fallback = "N/A") => {
+  const date = parseDateValue(value);
+
+  return date
+    ? date.toLocaleString(undefined, {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : fallback;
+};
+
+const startOfToday = () => {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const isDatePast = (value) => {
+  const date = parseDateValue(value);
+
+  if (!date) return false;
+
+  date.setHours(0, 0, 0, 0);
+
+  return date < startOfToday();
+};
+
+const isDateDueSoon = (value, days = 7) => {
+  const date = parseDateValue(value);
+
+  if (!date) return false;
+
+  const today = startOfToday();
+  const limit = new Date(today);
+  limit.setDate(limit.getDate() + days);
+  date.setHours(0, 0, 0, 0);
+
+  return date >= today && date <= limit;
+};
+
+const isRecentlyCreated = (value, days = 3) => {
+  const date = parseDateValue(value);
+
+  if (!date) return false;
+
+  const now = new Date();
+  const threshold = new Date(now);
+  threshold.setDate(threshold.getDate() - days);
+
+  return date >= threshold && date <= now;
+};
+
+const normalizeSubmissionStatus = (value) =>
+  cleanText(value).toLowerCase();
 
 const styles = {
   page: {
@@ -694,17 +904,37 @@ export default function TeacherDashboard() {
   const [exams, setExams] = useState([]);
   const [notices, setNotices] = useState([]);
 
+  const [availableSubjects, setAvailableSubjects] = useState([]);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [subjectsMessage, setSubjectsMessage] = useState("");
+
   const [taskTitle, setTaskTitle] = useState("");
+  const [taskSubjectId, setTaskSubjectId] = useState("");
   const [taskSubject, setTaskSubject] = useState("");
   const [taskDesc, setTaskDesc] = useState("");
   const [taskDue, setTaskDue] = useState("");
   const [taskFile, setTaskFile] = useState(null);
   const [taskFileKey, setTaskFileKey] = useState(Date.now());
+  const [savingTask, setSavingTask] = useState(false);
+
+  const [showHomeworkComposer, setShowHomeworkComposer] = useState(true);
+  const [homeworkFilter, setHomeworkFilter] = useState("all");
+  const [homeworkSubjectFilter, setHomeworkSubjectFilter] = useState("all");
+  const [homeworkSearch, setHomeworkSearch] = useState("");
+  const [homeworkSort, setHomeworkSort] = useState("newest");
+  const [homeworkViewMode, setHomeworkViewMode] = useState("grid");
+  const [selectedHomeworkTask, setSelectedHomeworkTask] = useState(null);
+
+  const [submissionFilter, setSubmissionFilter] = useState("all");
+  const [submissionSearch, setSubmissionSearch] = useState("");
+  const [selectedSubmissionContext, setSelectedSubmissionContext] =
+    useState(null);
 
   const [attendanceDate, setAttendanceDate] = useState(getToday());
   const [attendanceMap, setAttendanceMap] = useState({});
 
   const [examTitle, setExamTitle] = useState("");
+  const [examSubjectId, setExamSubjectId] = useState("");
   const [examSubject, setExamSubject] = useState("");
   const [examDate, setExamDate] = useState("");
   const [examMaxMarks, setExamMaxMarks] = useState("");
@@ -748,6 +978,13 @@ export default function TeacherDashboard() {
         className: cleanText(item.className || item.class),
         section: cleanText(item.section),
         classId: item.classId || item._id || item.id || "",
+        stream: cleanText(item.stream || teacher.stream || ""),
+        academicYear: cleanText(
+          item.academicYear || teacher.academicYear || ""
+        ),
+        subjects: Array.isArray(item.subjects)
+          ? item.subjects.map(cleanText).filter(Boolean)
+          : [],
       }))
       .filter((item) => item.className);
 
@@ -764,6 +1001,11 @@ export default function TeacherDashboard() {
           className: singleClass,
           section: singleSection,
           classId: teacher.classId || "",
+          stream: cleanText(teacher.stream || ""),
+          academicYear: cleanText(teacher.academicYear || ""),
+          subjects: Array.isArray(teacher.subjects)
+            ? teacher.subjects.map(cleanText).filter(Boolean)
+            : [],
         },
       ];
     }
@@ -776,6 +1018,36 @@ export default function TeacherDashboard() {
 
   const currentClassName = currentClass?.className || "";
   const currentSection = currentClass?.section || "";
+  const currentStream = cleanText(
+    currentClass?.stream || teacher.stream || ""
+  );
+  const currentAcademicYear = cleanText(
+    currentClass?.academicYear || teacher.academicYear || ""
+  );
+
+  const currentAssignedSubjectNames = useMemo(() => {
+    const names = [
+      ...(Array.isArray(currentClass?.subjects)
+        ? currentClass.subjects
+        : []),
+      ...(Array.isArray(teacher.subjects) ? teacher.subjects : []),
+    ];
+
+    const used = new Set();
+
+    return names
+      .map(cleanText)
+      .filter((name) => {
+        const key = name.toLowerCase();
+
+        if (!key || used.has(key)) {
+          return false;
+        }
+
+        used.add(key);
+        return true;
+      });
+  }, [currentClass, teacher.subjects]);
 
   const currentClassId =
     currentClass?.classId ||
@@ -796,11 +1068,344 @@ export default function TeacherDashboard() {
     });
   }, [allStudents, currentClassName, currentSection]);
 
+  const selectedTaskSubject = useMemo(() => {
+    return (
+      availableSubjects.find(
+        (subject) =>
+          getSubjectOptionValue(subject) === String(taskSubjectId)
+      ) || null
+    );
+  }, [availableSubjects, taskSubjectId]);
+
+  const selectedExamSubject = useMemo(() => {
+    return (
+      availableSubjects.find(
+        (subject) =>
+          getSubjectOptionValue(subject) === String(examSubjectId)
+      ) || null
+    );
+  }, [availableSubjects, examSubjectId]);
+
+  const teacherTasks = useMemo(() => {
+    return tasks.filter((task) => isTaskOwnedByTeacher(task, teacherId));
+  }, [tasks, teacherId]);
+
+  const readSubmissionReview = (task, submission, index = 0) => {
+    const reviewKey = getSubmissionReviewKey(task, submission, index);
+    const localReview = submissionReviews[reviewKey] || {};
+
+    return {
+      reviewKey,
+      marks:
+        localReview.marks ??
+        submission?.marks ??
+        submission?.score ??
+        submission?.obtainedMarks ??
+        "",
+      feedback:
+        localReview.feedback ??
+        submission?.feedback ??
+        "",
+      status:
+        localReview.status ??
+        submission?.status ??
+        submission?.submissionStatus ??
+        "Submitted",
+    };
+  };
+
+  const getTaskSubmissionList = (task, index = 0) => {
+    const taskKey = getTaskKey(task, index);
+
+    return Array.isArray(submissionsByTask[taskKey])
+      ? submissionsByTask[taskKey]
+      : [];
+  };
+
+  const homeworkMetrics = useMemo(() => {
+    const total = teacherTasks.length;
+    let recent = 0;
+    let dueSoon = 0;
+    let pastDue = 0;
+    let withSubmissions = 0;
+    let submissions = 0;
+
+    teacherTasks.forEach((task, index) => {
+      const submissionList = getTaskSubmissionList(task, index);
+      const dueDate = task?.dueDate || task?.deadline;
+      const createdAt = task?.createdAt || task?.date;
+
+      if (isRecentlyCreated(createdAt)) recent += 1;
+      if (isDateDueSoon(dueDate)) dueSoon += 1;
+      if (isDatePast(dueDate)) pastDue += 1;
+
+      if (submissionList.length > 0) {
+        withSubmissions += 1;
+        submissions += submissionList.length;
+      }
+    });
+
+    return {
+      total,
+      recent,
+      dueSoon,
+      pastDue,
+      withSubmissions,
+      submissions,
+    };
+  }, [teacherTasks, submissionsByTask]);
+
+  const visibleHomework = useMemo(() => {
+    const search = homeworkSearch.trim().toLowerCase();
+
+    const filtered = teacherTasks.filter((task, index) => {
+      const submissionList = getTaskSubmissionList(task, index);
+      const dueDate = task?.dueDate || task?.deadline;
+      const createdAt = task?.createdAt || task?.date;
+
+      const matchesFolder =
+        homeworkFilter === "all" ||
+        (homeworkFilter === "recent" && isRecentlyCreated(createdAt)) ||
+        (homeworkFilter === "due-soon" && isDateDueSoon(dueDate)) ||
+        (homeworkFilter === "past-due" && isDatePast(dueDate)) ||
+        (homeworkFilter === "with-submissions" &&
+          submissionList.length > 0);
+
+      const selectedFilterSubject =
+        homeworkSubjectFilter === "all"
+          ? null
+          : availableSubjects.find(
+              (subject) =>
+                getSubjectOptionValue(subject) ===
+                homeworkSubjectFilter
+            );
+
+      const taskSubjectIdValue = getRecordSubjectId(task);
+      const taskSubjectNameValue =
+        getRecordSubjectName(task).toLowerCase();
+
+      const filterSubjectId = selectedFilterSubject
+        ? getSubjectId(selectedFilterSubject)
+        : "";
+
+      const filterSubjectName = selectedFilterSubject
+        ? getSubjectName(selectedFilterSubject).toLowerCase()
+        : "";
+
+      const matchesSubject =
+        homeworkSubjectFilter === "all" ||
+        Boolean(
+          (taskSubjectIdValue &&
+            filterSubjectId &&
+            taskSubjectIdValue === filterSubjectId) ||
+            (taskSubjectNameValue &&
+              filterSubjectName &&
+              taskSubjectNameValue === filterSubjectName)
+        );
+
+      if (!matchesFolder || !matchesSubject) return false;
+      if (!search) return true;
+
+      return [
+        task?.title,
+        getRecordSubjectName(task),
+        getRecordSubjectCode(task),
+        task?.description,
+        task?.className,
+        task?.section,
+      ].some((value) =>
+        String(value || "")
+          .toLowerCase()
+          .includes(search)
+      );
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (homeworkSort === "title") {
+        return String(a?.title || "").localeCompare(
+          String(b?.title || "")
+        );
+      }
+
+      if (homeworkSort === "due-first") {
+        const aTime =
+          parseDateValue(a?.dueDate || a?.deadline)?.getTime() ||
+          Number.MAX_SAFE_INTEGER;
+        const bTime =
+          parseDateValue(b?.dueDate || b?.deadline)?.getTime() ||
+          Number.MAX_SAFE_INTEGER;
+
+        return aTime - bTime;
+      }
+
+      if (homeworkSort === "oldest") {
+        const aTime =
+          parseDateValue(a?.createdAt)?.getTime() || 0;
+        const bTime =
+          parseDateValue(b?.createdAt)?.getTime() || 0;
+
+        return aTime - bTime;
+      }
+
+      const aTime =
+        parseDateValue(a?.createdAt)?.getTime() || 0;
+      const bTime =
+        parseDateValue(b?.createdAt)?.getTime() || 0;
+
+      return bTime - aTime;
+    });
+  }, [
+    teacherTasks,
+    submissionsByTask,
+    homeworkFilter,
+    homeworkSubjectFilter,
+    availableSubjects,
+    homeworkSearch,
+    homeworkSort,
+  ]);
+
+  const submissionRows = useMemo(() => {
+    const rows = [];
+
+    teacherTasks.forEach((task, taskIndex) => {
+      getTaskSubmissionList(task, taskIndex).forEach(
+        (submission, submissionIndex) => {
+          const review = readSubmissionReview(
+            task,
+            submission,
+            submissionIndex
+          );
+
+          const cleanStatus = normalizeSubmissionStatus(
+            review.status
+          );
+
+          const reviewed =
+            hasValue(review.marks) ||
+            Boolean(cleanText(review.feedback)) ||
+            [
+              "checked",
+              "reviewed",
+              "needs improvement",
+              "graded",
+            ].some((status) => cleanStatus.includes(status));
+
+          const submittedDate = parseDateValue(
+            submission?.submittedAt ||
+              submission?.createdAt
+          );
+
+          const dueDate = parseDateValue(
+            task?.dueDate || task?.deadline
+          );
+
+          const late =
+            cleanStatus.includes("late") ||
+            Boolean(
+              submittedDate &&
+                dueDate &&
+                submittedDate.getTime() > dueDate.getTime()
+            );
+
+          rows.push({
+            task,
+            taskIndex,
+            submission,
+            submissionIndex,
+            review,
+            reviewed,
+            late,
+          });
+        }
+      );
+    });
+
+    return rows.sort((a, b) => {
+      const aTime =
+        parseDateValue(
+          a.submission?.submittedAt ||
+            a.submission?.createdAt
+        )?.getTime() || 0;
+      const bTime =
+        parseDateValue(
+          b.submission?.submittedAt ||
+            b.submission?.createdAt
+        )?.getTime() || 0;
+
+      return bTime - aTime;
+    });
+  }, [
+    teacherTasks,
+    submissionsByTask,
+    submissionReviews,
+  ]);
+
+  const submissionMetrics = useMemo(() => {
+    return {
+      all: submissionRows.length,
+      new: submissionRows.filter((row) => !row.reviewed)
+        .length,
+      reviewed: submissionRows.filter((row) => row.reviewed)
+        .length,
+      late: submissionRows.filter((row) => row.late)
+        .length,
+    };
+  }, [submissionRows]);
+
+  const visibleSubmissionRows = useMemo(() => {
+    const search = submissionSearch
+      .trim()
+      .toLowerCase();
+
+    return submissionRows.filter((row) => {
+      const matchesFolder =
+        submissionFilter === "all" ||
+        (submissionFilter === "new" && !row.reviewed) ||
+        (submissionFilter === "reviewed" && row.reviewed) ||
+        (submissionFilter === "late" && row.late);
+
+      if (!matchesFolder) return false;
+      if (!search) return true;
+
+      const studentId = getStudentIdFromSubmission(
+        row.submission
+      );
+
+      const studentRecord = allStudents.find(
+        (student) =>
+          String(getId(student)) === String(studentId)
+      );
+
+      return [
+        row.task?.title,
+        getRecordSubjectName(row.task),
+        getRecordSubjectCode(row.task),
+        row.submission?.studentName,
+        row.submission?.student?.name,
+        row.submission?.studentId?.name,
+        studentRecord?.name,
+        row.submission?.studentEmail,
+        row.submission?.student?.email,
+        row.submission?.studentId?.email,
+        studentRecord?.email,
+      ].some((value) =>
+        String(value || "")
+          .toLowerCase()
+          .includes(search)
+      );
+    });
+  }, [
+    submissionRows,
+    submissionFilter,
+    submissionSearch,
+    allStudents,
+  ]);
+
   const dashboardStats = useMemo(() => {
     return {
       assignedClasses: assignedClasses.length,
       students: studentsForCurrentClass.length,
-      tasks: tasks.length,
+      tasks: teacherTasks.length,
       exams: exams.length,
       notices: notices.length,
       attendanceRecords: attendanceRecords.length,
@@ -808,7 +1413,7 @@ export default function TeacherDashboard() {
   }, [
     assignedClasses.length,
     studentsForCurrentClass.length,
-    tasks.length,
+    teacherTasks.length,
     exams.length,
     notices.length,
     attendanceRecords.length,
@@ -942,6 +1547,144 @@ export default function TeacherDashboard() {
     }
   };
 
+
+  const loadTeacherSubjectOptions = async () => {
+    if (!teacherId || !currentClassName) {
+      setAvailableSubjects([]);
+      setSubjectsMessage("");
+      return;
+    }
+
+    try {
+      setLoadingSubjects(true);
+      setSubjectsMessage("");
+
+      const teacherSubjectResponse = await getTeacherSubjects(teacherId, {
+        className: currentClassName,
+        section: currentSection,
+        stream: currentStream,
+        academicYear: currentAcademicYear,
+      });
+
+      let subjects = toArray(teacherSubjectResponse);
+      let source = "assigned";
+
+      if (subjects.length === 0) {
+        const classSubjectResponse = await getSubjectsByClass(
+          currentClassName,
+          currentSection,
+          {
+            schoolId,
+            stream: currentStream,
+            academicYear: currentAcademicYear,
+            activeOnly: true,
+          }
+        );
+
+        const classSubjects = toArray(classSubjectResponse);
+
+        if (currentAssignedSubjectNames.length > 0) {
+          const allowedNames = new Set(
+            currentAssignedSubjectNames.map((name) =>
+              name.toLowerCase()
+            )
+          );
+
+          subjects = classSubjects.filter((subject) =>
+            allowedNames.has(getSubjectName(subject).toLowerCase())
+          );
+
+          if (subjects.length > 0) {
+            source = "profile-matched";
+          }
+        }
+
+        if (subjects.length === 0 && classSubjects.length > 0) {
+          subjects = classSubjects;
+          source = "class-catalogue";
+        }
+      }
+
+      if (
+        subjects.length === 0 &&
+        currentAssignedSubjectNames.length > 0
+      ) {
+        subjects = currentAssignedSubjectNames.map((name, index) => ({
+          id: `legacy-subject-${index}-${name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")}`,
+          name,
+          subjectName: name,
+          subjectCode: "",
+          code: "",
+          className: currentClassName,
+          section: currentSection || "All",
+          stream: currentStream,
+          academicYear: currentAcademicYear,
+          type: "Compulsory",
+          isActive: true,
+          isLegacySubject: true,
+        }));
+
+        source = "legacy-profile";
+      }
+
+      const cleanedSubjects = dedupeSubjects(
+        subjects.filter(
+          (subject) => subject?.isActive !== false
+        )
+      );
+
+      setAvailableSubjects(cleanedSubjects);
+
+      if (source === "class-catalogue") {
+        setSubjectsMessage(
+          "Showing active subjects configured for this class. Ask the admin to assign only your teaching subjects for stricter access."
+        );
+      } else if (source === "legacy-profile") {
+        setSubjectsMessage(
+          "Using subject names from your teacher profile. The admin should connect them to the central Subjects section."
+        );
+      } else if (cleanedSubjects.length === 0) {
+        setSubjectsMessage(
+          "No subject is configured for this teacher and class. Ask the admin to create subjects and assign them to you."
+        );
+      } else {
+        setSubjectsMessage("");
+      }
+    } catch (err) {
+      console.log(
+        "Load teacher subjects error:",
+        err.response?.data || err.message
+      );
+
+      const legacySubjects = currentAssignedSubjectNames.map(
+        (name, index) => ({
+          id: `legacy-subject-${index}-${name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")}`,
+          name,
+          subjectName: name,
+          className: currentClassName,
+          section: currentSection || "All",
+          stream: currentStream,
+          academicYear: currentAcademicYear,
+          isActive: true,
+          isLegacySubject: true,
+        })
+      );
+
+      setAvailableSubjects(dedupeSubjects(legacySubjects));
+      setSubjectsMessage(
+        legacySubjects.length > 0
+          ? "Could not load the central subject catalogue, so teacher-profile subjects are shown temporarily."
+          : "Could not load subjects. Check the backend and the admin subject setup."
+      );
+    } finally {
+      setLoadingSubjects(false);
+    }
+  };
+
   const loadSubmissionsForTasks = async (taskList) => {
     const nextSubmissions = {};
 
@@ -1009,10 +1752,10 @@ export default function TeacherDashboard() {
           fetchArraySafely(
             [
               {
-                fn: () => getTasksByClass(currentClassId, currentSection),
+                fn: () => getTasksByClass(currentClassName, currentSection),
               },
               {
-                fn: () => getTasksByClass(currentClassName, currentSection),
+                fn: () => getTasksByClass(currentClassId, currentSection),
               },
               {
                 method: "get",
@@ -1048,11 +1791,11 @@ export default function TeacherDashboard() {
             [
               {
                 fn: () =>
-                  getAttendanceByClass(currentClassId, currentSection),
+                  getAttendanceByClass(currentClassName, currentSection),
               },
               {
                 fn: () =>
-                  getAttendanceByClass(currentClassName, currentSection),
+                  getAttendanceByClass(currentClassId, currentSection),
               },
               {
                 method: "get",
@@ -1089,10 +1832,10 @@ export default function TeacherDashboard() {
           fetchArraySafely(
             [
               {
-                fn: () => getExamsByClass(currentClassId, currentSection),
+                fn: () => getExamsByClass(currentClassName, currentSection),
               },
               {
-                fn: () => getExamsByClass(currentClassName, currentSection),
+                fn: () => getExamsByClass(currentClassId, currentSection),
               },
               {
                 method: "get",
@@ -1131,10 +1874,10 @@ export default function TeacherDashboard() {
           fetchArraySafely(
             [
               {
-                fn: () => getNoticesByClass(currentClassId, currentSection),
+                fn: () => getNoticesByClass(currentClassName, currentSection),
               },
               {
-                fn: () => getNoticesByClass(currentClassName, currentSection),
+                fn: () => getNoticesByClass(currentClassId, currentSection),
               },
               {
                 method: "get",
@@ -1171,8 +1914,12 @@ export default function TeacherDashboard() {
           ),
         ]);
 
-      setTasks(fetchedTasks);
-      await loadSubmissionsForTasks(fetchedTasks);
+      const ownedTasks = fetchedTasks.filter((task) =>
+        isTaskOwnedByTeacher(task, teacherId)
+      );
+
+      setTasks(ownedTasks);
+      await loadSubmissionsForTasks(ownedTasks);
 
       setAttendanceRecords(
         mergeUniqueItems(fetchedAttendance, localAttendance)
@@ -1198,6 +1945,49 @@ export default function TeacherDashboard() {
     fetchDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClassName, currentSection]);
+
+  useEffect(() => {
+    loadTeacherSubjectOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    teacherId,
+    currentClassName,
+    currentSection,
+    currentStream,
+    currentAcademicYear,
+  ]);
+
+  useEffect(() => {
+    setTaskSubjectId("");
+    setTaskSubject("");
+    setExamSubjectId("");
+    setExamSubject("");
+    setHomeworkSubjectFilter("all");
+  }, [currentClassName, currentSection]);
+
+  useEffect(() => {
+    if (availableSubjects.length !== 1) {
+      return;
+    }
+
+    const onlySubject = availableSubjects[0];
+    const optionValue = getSubjectOptionValue(onlySubject);
+    const name = getSubjectName(onlySubject);
+
+    if (!taskSubjectId) {
+      setTaskSubjectId(optionValue);
+      setTaskSubject(name);
+    }
+
+    if (!examSubjectId) {
+      setExamSubjectId(optionValue);
+      setExamSubject(name);
+    }
+  }, [
+    availableSubjects,
+    taskSubjectId,
+    examSubjectId,
+  ]);
 
   useEffect(() => {
     setAttendanceMap((prev) => {
@@ -1303,9 +2093,27 @@ export default function TeacherDashboard() {
       return;
     }
 
+    if (!selectedTaskSubject) {
+      showError("Please select a subject from the dropdown.");
+      return;
+    }
+
+    const selectedSubjectId = getSubjectId(selectedTaskSubject);
+    const selectedSubjectName = getSubjectName(selectedTaskSubject);
+    const selectedSubjectCode = getSubjectCode(selectedTaskSubject);
+
     const taskPayload = {
       title: taskTitle.trim(),
-      subject: taskSubject.trim(),
+      subjectId: selectedTaskSubject.isLegacySubject
+        ? ""
+        : selectedSubjectId,
+      subject: selectedSubjectName,
+      subjectName: selectedSubjectName,
+      subjectCode: selectedSubjectCode,
+      subjectType: selectedTaskSubject.type || "",
+      stream: selectedTaskSubject.stream || currentStream,
+      academicYear:
+        selectedTaskSubject.academicYear || currentAcademicYear,
       description: taskDesc.trim(),
       dueDate: taskDue,
       className: currentClassName,
@@ -1321,23 +2129,29 @@ export default function TeacherDashboard() {
     }
 
     try {
+      setSavingTask(true);
       setError("");
       setMessage("");
 
       await createTask(taskPayload);
 
       setTaskTitle("");
+      setTaskSubjectId("");
       setTaskSubject("");
       setTaskDesc("");
       setTaskDue("");
       setTaskFile(null);
       setTaskFileKey(Date.now());
+      setHomeworkFilter("recent");
 
       showSuccess("Homework created successfully.");
-      fetchDashboardData();
+      await fetchDashboardData();
+      setShowHomeworkComposer(false);
     } catch (err) {
       console.log("Create task error:", err.response?.data || err);
       showError(err.response?.data?.message || "Failed to create homework.");
+    } finally {
+      setSavingTask(false);
     }
   };
 
@@ -1510,14 +2324,32 @@ export default function TeacherDashboard() {
       return;
     }
 
+    if (!selectedExamSubject) {
+      showError("Please select an exam subject from the dropdown.");
+      return;
+    }
+
     if (Number(examMaxMarks) <= 0) {
       showError("Max marks must be greater than 0.");
       return;
     }
 
+    const selectedSubjectId = getSubjectId(selectedExamSubject);
+    const selectedSubjectName = getSubjectName(selectedExamSubject);
+    const selectedSubjectCode = getSubjectCode(selectedExamSubject);
+
     const examData = {
       title: examTitle.trim(),
-      subject: examSubject.trim(),
+      subjectId: selectedExamSubject.isLegacySubject
+        ? ""
+        : selectedSubjectId,
+      subject: selectedSubjectName,
+      subjectName: selectedSubjectName,
+      subjectCode: selectedSubjectCode,
+      subjectType: selectedExamSubject.type || "",
+      stream: selectedExamSubject.stream || currentStream,
+      academicYear:
+        selectedExamSubject.academicYear || currentAcademicYear,
       date: examDate,
       maxMarks: Number(examMaxMarks),
       totalMarks: Number(examMaxMarks),
@@ -1563,6 +2395,7 @@ export default function TeacherDashboard() {
       const savedExam = extractSavedObject(res, examData, ["exam"]);
 
       setExamTitle("");
+      setExamSubjectId("");
       setExamSubject("");
       setExamDate("");
       setExamMaxMarks("");
@@ -1584,6 +2417,7 @@ export default function TeacherDashboard() {
       setExams((prev) => mergeUniqueItems([localExam, ...prev], []));
 
       setExamTitle("");
+      setExamSubjectId("");
       setExamSubject("");
       setExamDate("");
       setExamMaxMarks("");
@@ -1808,7 +2642,10 @@ export default function TeacherDashboard() {
     const markData = {
       examId,
       examTitle: exam.title || "",
-      subject: exam.subject || "",
+      subjectId: getRecordSubjectId(exam),
+      subject: getRecordSubjectName(exam),
+      subjectName: getRecordSubjectName(exam),
+      subjectCode: getRecordSubjectCode(exam),
       studentId,
       studentName: student.name || "",
       studentEmail: student.email || "",
@@ -1869,20 +2706,7 @@ export default function TeacherDashboard() {
   };
 
   const getDisplaySubmissionReview = (task, submission, index) => {
-    const reviewKey = getSubmissionReviewKey(task, submission, index);
-    const localReview = submissionReviews[reviewKey] || {};
-
-    return {
-      reviewKey,
-      marks:
-        localReview.marks ??
-        submission.marks ??
-        submission.score ??
-        submission.obtainedMarks ??
-        "",
-      feedback: localReview.feedback ?? submission.feedback ?? "",
-      status: localReview.status ?? submission.status ?? "Submitted",
-    };
+    return readSubmissionReview(task, submission, index);
   };
 
   const getAttendanceStudentName = (record) => {
@@ -1925,6 +2749,1060 @@ export default function TeacherDashboard() {
       }
     >
       <div className="portal-page-stack" style={styles.shell}>
+        <style>
+          {`
+            .teacher-workflow-section {
+              overflow: visible;
+            }
+
+            .teacher-workflow-heading {
+              display: flex;
+              align-items: flex-start;
+              justify-content: space-between;
+              gap: 18px;
+              margin-bottom: 22px;
+            }
+
+            .teacher-workflow-heading h2 {
+              margin: 4px 0 7px;
+              color: #0f172a;
+              font-size: clamp(25px, 3vw, 34px);
+              font-weight: 950;
+              letter-spacing: -0.8px;
+            }
+
+            .teacher-workflow-heading p {
+              max-width: 720px;
+              margin: 0;
+              color: #64748b;
+              line-height: 1.6;
+            }
+
+            .teacher-eyebrow {
+              color: #2563eb;
+              font-size: 11px;
+              font-weight: 950;
+              letter-spacing: 1.1px;
+              text-transform: uppercase;
+            }
+
+            .teacher-workflow-heading-actions {
+              display: flex;
+              justify-content: flex-end;
+              gap: 10px;
+              flex-wrap: wrap;
+            }
+
+            .teacher-primary-action,
+            .teacher-soft-button {
+              min-height: 42px;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              gap: 8px;
+              padding: 10px 15px;
+              border-radius: 13px;
+              font: inherit;
+              font-size: 13px;
+              font-weight: 900;
+              cursor: pointer;
+              transition:
+                transform 160ms ease,
+                box-shadow 160ms ease,
+                border-color 160ms ease,
+                background 160ms ease;
+            }
+
+            .teacher-primary-action {
+              border: 0;
+              background: linear-gradient(135deg, #2563eb, #4f46e5);
+              color: #ffffff;
+              box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
+            }
+
+            .teacher-soft-button {
+              border: 1px solid #dbe3ef;
+              background: #ffffff;
+              color: #334155;
+            }
+
+            .teacher-primary-action:hover:not(:disabled),
+            .teacher-soft-button:hover:not(:disabled) {
+              transform: translateY(-1px);
+            }
+
+            .teacher-primary-action:disabled,
+            .teacher-soft-button:disabled {
+              opacity: 0.55;
+              cursor: not-allowed;
+            }
+
+            .teacher-folder-grid {
+              display: grid;
+              grid-template-columns: repeat(5, minmax(150px, 1fr));
+              gap: 12px;
+              margin-bottom: 22px;
+            }
+
+            .teacher-submission-folders {
+              grid-template-columns: repeat(4, minmax(170px, 1fr));
+            }
+
+            .teacher-folder-card {
+              min-width: 0;
+              display: flex;
+              align-items: center;
+              gap: 11px;
+              padding: 15px;
+              border: 1px solid #dce6f2;
+              border-radius: 17px;
+              background: linear-gradient(180deg, #ffffff, #f8fbff);
+              color: #0f172a;
+              text-align: left;
+              cursor: pointer;
+              box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+              transition:
+                transform 160ms ease,
+                border-color 160ms ease,
+                box-shadow 160ms ease;
+            }
+
+            .teacher-folder-card:hover {
+              transform: translateY(-2px);
+              border-color: #93c5fd;
+              box-shadow: 0 13px 28px rgba(37, 99, 235, 0.1);
+            }
+
+            .teacher-folder-card.is-active {
+              border-color: #60a5fa;
+              background: linear-gradient(135deg, #eff6ff, #eef2ff);
+              box-shadow: 0 13px 30px rgba(37, 99, 235, 0.14);
+            }
+
+            .teacher-folder-icon {
+              width: 42px;
+              height: 42px;
+              flex: 0 0 42px;
+              display: grid;
+              place-items: center;
+              border-radius: 13px;
+              background: #eaf2ff;
+              font-size: 21px;
+            }
+
+            .teacher-folder-copy {
+              min-width: 0;
+              flex: 1;
+            }
+
+            .teacher-folder-copy strong,
+            .teacher-folder-copy small {
+              display: block;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .teacher-folder-copy strong {
+              font-size: 13px;
+              font-weight: 900;
+            }
+
+            .teacher-folder-copy small {
+              margin-top: 3px;
+              color: #64748b;
+              font-size: 11px;
+            }
+
+            .teacher-folder-count {
+              min-width: 27px;
+              height: 27px;
+              display: grid;
+              place-items: center;
+              border-radius: 9px;
+              background: #ffffff;
+              color: #1d4ed8;
+              font-size: 12px;
+              font-weight: 950;
+              box-shadow: 0 5px 12px rgba(15, 23, 42, 0.07);
+            }
+
+            .teacher-composer-panel {
+              margin-bottom: 22px;
+              padding: 20px;
+              border: 1px solid #bfdbfe;
+              border-radius: 22px;
+              background:
+                radial-gradient(circle at top right, rgba(96, 165, 250, 0.15), transparent 30%),
+                linear-gradient(135deg, #f8fbff, #ffffff);
+              box-shadow: 0 15px 38px rgba(37, 99, 235, 0.08);
+            }
+
+            .teacher-composer-header {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 14px;
+              margin-bottom: 18px;
+            }
+
+            .teacher-composer-header > div {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+            }
+
+            .teacher-composer-header h3 {
+              margin: 0;
+              color: #0f172a;
+              font-size: 19px;
+              font-weight: 950;
+            }
+
+            .teacher-composer-header p {
+              margin: 4px 0 0;
+              color: #64748b;
+              font-size: 13px;
+            }
+
+            .teacher-composer-icon {
+              width: 46px;
+              height: 46px;
+              display: grid;
+              place-items: center;
+              border-radius: 14px;
+              background: #dbeafe;
+              font-size: 22px;
+            }
+
+            .teacher-class-target {
+              padding: 8px 12px;
+              border: 1px solid #bfdbfe;
+              border-radius: 999px;
+              background: #ffffff;
+              color: #1e40af;
+              font-size: 12px;
+              font-weight: 900;
+              white-space: nowrap;
+            }
+
+            .teacher-composer-grid,
+            .teacher-review-form {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 14px;
+            }
+
+            .teacher-review-form {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              padding-top: 4px;
+            }
+
+            .teacher-field label {
+              display: block;
+              margin-bottom: 7px;
+              color: #334155;
+              font-size: 12px;
+              font-weight: 900;
+            }
+
+            .teacher-field input,
+            .teacher-field select,
+            .teacher-field textarea {
+              width: 100%;
+              min-height: 46px;
+              padding: 11px 13px;
+              border: 1px solid #cbd5e1;
+              border-radius: 13px;
+              background: #ffffff;
+              color: #0f172a;
+              font: inherit;
+              outline: none;
+            }
+
+            .teacher-field textarea {
+              min-height: 112px;
+              resize: vertical;
+            }
+
+            .teacher-field input:focus,
+            .teacher-field select:focus,
+            .teacher-field textarea:focus {
+              border-color: #60a5fa;
+              box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.14);
+            }
+
+            .teacher-subject-help {
+              display: block;
+              margin-top: 7px;
+              color: #64748b;
+              font-size: 11px;
+              line-height: 1.45;
+            }
+
+            .teacher-subject-warning {
+              margin: 0 0 16px;
+              padding: 11px 13px;
+              border: 1px solid #fde68a;
+              border-radius: 13px;
+              background: #fffbeb;
+              color: #92400e;
+              font-size: 12px;
+              font-weight: 750;
+              line-height: 1.5;
+            }
+
+            .teacher-subject-summary {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              flex-wrap: wrap;
+              margin: 0 0 16px;
+            }
+
+            .teacher-subject-summary span {
+              display: inline-flex;
+              align-items: center;
+              min-height: 30px;
+              padding: 6px 10px;
+              border: 1px solid #dbeafe;
+              border-radius: 999px;
+              background: #eff6ff;
+              color: #1e40af;
+              font-size: 11px;
+              font-weight: 850;
+            }
+
+            .teacher-field-wide {
+              grid-column: 1 / -1;
+              margin-top: 14px;
+            }
+
+            .teacher-upload-row {
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) auto;
+              gap: 14px;
+              align-items: stretch;
+              margin-top: 15px;
+            }
+
+            .teacher-upload-box {
+              min-width: 0;
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              padding: 13px 15px;
+              border: 1px dashed #93c5fd;
+              border-radius: 15px;
+              background: rgba(255, 255, 255, 0.82);
+              cursor: pointer;
+            }
+
+            .teacher-upload-box input {
+              position: absolute;
+              width: 1px;
+              height: 1px;
+              opacity: 0;
+              pointer-events: none;
+            }
+
+            .teacher-upload-icon {
+              width: 39px;
+              height: 39px;
+              flex: 0 0 39px;
+              display: grid;
+              place-items: center;
+              border-radius: 12px;
+              background: #eff6ff;
+              font-size: 19px;
+            }
+
+            .teacher-upload-box span:last-child {
+              min-width: 0;
+            }
+
+            .teacher-upload-box strong,
+            .teacher-upload-box small {
+              display: block;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .teacher-upload-box strong {
+              color: #1e3a8a;
+              font-size: 13px;
+            }
+
+            .teacher-upload-box small {
+              margin-top: 3px;
+              color: #64748b;
+              font-size: 11px;
+            }
+
+            .teacher-create-submit {
+              min-width: 165px;
+            }
+
+            .teacher-workflow-toolbar {
+              display: flex;
+              align-items: center;
+              gap: 11px;
+              margin-bottom: 18px;
+              padding: 12px;
+              border: 1px solid #e2e8f0;
+              border-radius: 17px;
+              background: #f8fafc;
+            }
+
+            .teacher-search-control {
+              min-width: 220px;
+              flex: 1;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              padding: 0 12px;
+              border: 1px solid #d7e0eb;
+              border-radius: 12px;
+              background: #ffffff;
+            }
+
+            .teacher-search-control span {
+              color: #64748b;
+              font-size: 20px;
+            }
+
+            .teacher-search-control input {
+              width: 100%;
+              min-height: 42px;
+              border: 0;
+              background: transparent;
+              color: #0f172a;
+              font: inherit;
+              outline: none;
+            }
+
+            .teacher-sort-control {
+              min-height: 43px;
+              padding: 0 12px;
+              border: 1px solid #d7e0eb;
+              border-radius: 12px;
+              background: #ffffff;
+              color: #334155;
+              font: inherit;
+              font-size: 13px;
+              font-weight: 800;
+            }
+
+            .teacher-view-toggle {
+              display: flex;
+              padding: 3px;
+              border: 1px solid #d7e0eb;
+              border-radius: 12px;
+              background: #ffffff;
+            }
+
+            .teacher-view-toggle button {
+              width: 37px;
+              height: 35px;
+              border: 0;
+              border-radius: 9px;
+              background: transparent;
+              color: #64748b;
+              font-size: 18px;
+              cursor: pointer;
+            }
+
+            .teacher-view-toggle button.is-active {
+              background: #e0e7ff;
+              color: #3730a3;
+            }
+
+            .teacher-homework-collection.is-grid {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 15px;
+            }
+
+            .teacher-homework-collection.is-list {
+              display: grid;
+              gap: 12px;
+            }
+
+            .teacher-homework-card {
+              min-width: 0;
+              display: flex;
+              flex-direction: column;
+              padding: 18px;
+              border: 1px solid #dce6f2;
+              border-top: 4px solid #60a5fa;
+              border-radius: 19px;
+              background: #ffffff;
+              box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+            }
+
+            .teacher-homework-card.is-overdue {
+              border-top-color: #f87171;
+            }
+
+            .teacher-homework-card.is-due-soon {
+              border-top-color: #f59e0b;
+            }
+
+            .teacher-homework-collection.is-list .teacher-homework-card {
+              display: grid;
+              grid-template-columns: minmax(240px, 1.3fr) minmax(260px, 1fr) auto;
+              gap: 18px;
+              align-items: center;
+            }
+
+            .teacher-homework-card-top {
+              display: flex;
+              align-items: flex-start;
+              gap: 12px;
+            }
+
+            .teacher-homework-file-icon {
+              width: 46px;
+              height: 46px;
+              flex: 0 0 46px;
+              display: grid;
+              place-items: center;
+              border-radius: 14px;
+              background: #eff6ff;
+              font-size: 22px;
+            }
+
+            .teacher-homework-card-heading {
+              min-width: 0;
+            }
+
+            .teacher-homework-card-heading h3 {
+              margin: 8px 0 4px;
+              color: #0f172a;
+              font-size: 18px;
+              font-weight: 950;
+              overflow-wrap: anywhere;
+            }
+
+            .teacher-homework-card-heading p {
+              margin: 0;
+              color: #64748b;
+              font-size: 13px;
+              font-weight: 750;
+            }
+
+            .teacher-homework-badges {
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              flex-wrap: wrap;
+            }
+
+            .teacher-status-pill {
+              display: inline-flex;
+              align-items: center;
+              min-height: 24px;
+              padding: 4px 8px;
+              border-radius: 999px;
+              background: #e0f2fe;
+              color: #075985;
+              font-size: 10px;
+              font-weight: 950;
+              letter-spacing: 0.2px;
+              text-transform: uppercase;
+            }
+
+            .teacher-status-pill.is-new {
+              background: #ede9fe;
+              color: #5b21b6;
+            }
+
+            .teacher-status-pill.is-reviewed {
+              background: #dcfce7;
+              color: #166534;
+            }
+
+            .teacher-status-pill.is-due-soon {
+              background: #fef3c7;
+              color: #92400e;
+            }
+
+            .teacher-status-pill.is-overdue {
+              background: #fee2e2;
+              color: #991b1b;
+            }
+
+            .teacher-homework-description {
+              display: -webkit-box;
+              min-height: 42px;
+              margin: 14px 0;
+              overflow: hidden;
+              color: #475569;
+              font-size: 13px;
+              line-height: 1.55;
+              -webkit-box-orient: vertical;
+              -webkit-line-clamp: 2;
+            }
+
+            .teacher-homework-meta-grid {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 8px;
+              margin-top: auto;
+            }
+
+            .teacher-homework-meta-grid > div {
+              min-width: 0;
+              padding: 10px;
+              border-radius: 12px;
+              background: #f8fafc;
+            }
+
+            .teacher-homework-meta-grid span,
+            .teacher-homework-meta-grid strong {
+              display: block;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .teacher-homework-meta-grid span {
+              color: #64748b;
+              font-size: 10px;
+              font-weight: 800;
+              text-transform: uppercase;
+            }
+
+            .teacher-homework-meta-grid strong {
+              margin-top: 4px;
+              color: #0f172a;
+              font-size: 12px;
+            }
+
+            .teacher-homework-progress {
+              height: 7px;
+              margin: 13px 0;
+              overflow: hidden;
+              border-radius: 999px;
+              background: #e2e8f0;
+            }
+
+            .teacher-homework-progress span {
+              display: block;
+              height: 100%;
+              border-radius: 999px;
+              background: linear-gradient(90deg, #2563eb, #4f46e5);
+            }
+
+            .teacher-homework-card-actions {
+              display: flex;
+              gap: 8px;
+              margin-top: auto;
+            }
+
+            .teacher-homework-card-actions > * {
+              flex: 1;
+            }
+
+            .teacher-professional-empty {
+              display: grid;
+              place-items: center;
+              min-height: 260px;
+              padding: 32px;
+              border: 1px dashed #bfdbfe;
+              border-radius: 21px;
+              background: linear-gradient(135deg, #f8fbff, #ffffff);
+              text-align: center;
+            }
+
+            .teacher-professional-empty > span {
+              font-size: 44px;
+            }
+
+            .teacher-professional-empty h3 {
+              margin: 12px 0 6px;
+              color: #0f172a;
+              font-size: 20px;
+              font-weight: 950;
+            }
+
+            .teacher-professional-empty p {
+              max-width: 540px;
+              margin: 0 0 16px;
+              color: #64748b;
+              line-height: 1.6;
+            }
+
+            .teacher-submission-summary {
+              display: flex;
+              align-items: center;
+              gap: 9px;
+              flex-wrap: wrap;
+            }
+
+            .teacher-submission-summary span {
+              padding: 9px 12px;
+              border-radius: 999px;
+              background: #ffffff;
+              color: #475569;
+              font-size: 12px;
+              font-weight: 800;
+            }
+
+            .teacher-submission-list {
+              display: grid;
+              gap: 11px;
+            }
+
+            .teacher-submission-row {
+              display: grid;
+              grid-template-columns: auto minmax(0, 1fr) auto;
+              gap: 14px;
+              align-items: center;
+              padding: 15px;
+              border: 1px solid #dce6f2;
+              border-left: 4px solid #8b5cf6;
+              border-radius: 17px;
+              background: #ffffff;
+              box-shadow: 0 8px 23px rgba(15, 23, 42, 0.05);
+            }
+
+            .teacher-submission-row.is-reviewed {
+              border-left-color: #22c55e;
+            }
+
+            .teacher-submission-avatar {
+              width: 46px;
+              height: 46px;
+              flex: 0 0 46px;
+              display: grid;
+              place-items: center;
+              border-radius: 14px;
+              background: linear-gradient(135deg, #dbeafe, #e0e7ff);
+              color: #3730a3;
+              font-size: 16px;
+              font-weight: 950;
+            }
+
+            .teacher-submission-main {
+              min-width: 0;
+            }
+
+            .teacher-submission-title-line {
+              display: flex;
+              justify-content: space-between;
+              gap: 12px;
+            }
+
+            .teacher-submission-title-line h3 {
+              margin: 0;
+              color: #0f172a;
+              font-size: 15px;
+              font-weight: 950;
+            }
+
+            .teacher-submission-title-line p {
+              margin: 3px 0 0;
+              color: #64748b;
+              font-size: 11px;
+            }
+
+            .teacher-submission-task-line,
+            .teacher-submission-meta {
+              display: flex;
+              align-items: center;
+              gap: 7px;
+              flex-wrap: wrap;
+            }
+
+            .teacher-submission-task-line {
+              margin-top: 9px;
+              color: #334155;
+              font-size: 13px;
+            }
+
+            .teacher-submission-meta {
+              margin-top: 7px;
+              color: #64748b;
+              font-size: 11px;
+            }
+
+            .teacher-review-button {
+              min-width: 118px;
+            }
+
+            .teacher-modal-backdrop {
+              position: fixed;
+              inset: 0;
+              z-index: 1000;
+              display: grid;
+              place-items: center;
+              padding: 20px;
+              background: rgba(15, 23, 42, 0.58);
+              backdrop-filter: blur(7px);
+            }
+
+            .teacher-detail-modal {
+              width: min(760px, 100%);
+              max-height: calc(100vh - 40px);
+              overflow-y: auto;
+              border: 1px solid rgba(255, 255, 255, 0.5);
+              border-radius: 24px;
+              background: #ffffff;
+              box-shadow: 0 28px 90px rgba(15, 23, 42, 0.28);
+            }
+
+            .teacher-review-modal {
+              width: min(850px, 100%);
+            }
+
+            .teacher-modal-header {
+              position: sticky;
+              top: 0;
+              z-index: 2;
+              display: flex;
+              justify-content: space-between;
+              gap: 16px;
+              padding: 20px 22px;
+              border-bottom: 1px solid #e2e8f0;
+              background: rgba(255, 255, 255, 0.96);
+              backdrop-filter: blur(12px);
+            }
+
+            .teacher-modal-header h2 {
+              margin: 4px 0 3px;
+              color: #0f172a;
+              font-size: 24px;
+              font-weight: 950;
+            }
+
+            .teacher-modal-header p {
+              margin: 0;
+              color: #64748b;
+            }
+
+            .teacher-modal-close {
+              width: 39px;
+              height: 39px;
+              flex: 0 0 39px;
+              border: 1px solid #dbe3ef;
+              border-radius: 12px;
+              background: #ffffff;
+              color: #334155;
+              font-size: 25px;
+              line-height: 1;
+              cursor: pointer;
+            }
+
+            .teacher-modal-stat-grid {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 11px;
+              padding: 18px 22px 0;
+            }
+
+            .teacher-modal-stat-grid > div {
+              padding: 13px;
+              border-radius: 14px;
+              background: #f8fafc;
+            }
+
+            .teacher-modal-stat-grid span,
+            .teacher-modal-stat-grid strong {
+              display: block;
+            }
+
+            .teacher-modal-stat-grid span {
+              color: #64748b;
+              font-size: 11px;
+              font-weight: 800;
+              text-transform: uppercase;
+            }
+
+            .teacher-modal-stat-grid strong {
+              margin-top: 5px;
+              color: #0f172a;
+              font-size: 13px;
+            }
+
+            .teacher-modal-section {
+              margin: 18px 22px 0;
+              padding: 17px;
+              border: 1px solid #e2e8f0;
+              border-radius: 16px;
+              background: #ffffff;
+            }
+
+            .teacher-modal-section h3 {
+              margin: 0 0 9px;
+              color: #0f172a;
+              font-size: 15px;
+              font-weight: 950;
+            }
+
+            .teacher-modal-section p {
+              margin: 0;
+              color: #475569;
+              line-height: 1.65;
+              white-space: pre-wrap;
+            }
+
+            .teacher-modal-footer {
+              display: flex;
+              justify-content: flex-end;
+              gap: 10px;
+              padding: 20px 22px;
+            }
+
+            .teacher-review-student-strip {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              margin: 18px 22px 0;
+              padding: 14px;
+              border-radius: 16px;
+              background: linear-gradient(135deg, #eff6ff, #eef2ff);
+            }
+
+            .teacher-review-student-strip > div:nth-child(2) {
+              min-width: 0;
+              flex: 1;
+            }
+
+            .teacher-review-student-strip strong,
+            .teacher-review-student-strip span {
+              display: block;
+            }
+
+            .teacher-review-student-strip strong {
+              color: #0f172a;
+            }
+
+            .teacher-review-student-strip > div:nth-child(2) span {
+              margin-top: 3px;
+              color: #64748b;
+              font-size: 12px;
+            }
+
+            .teacher-answer-panel {
+              min-height: 90px;
+              padding: 14px;
+              border-radius: 13px;
+              background: #f8fafc;
+              color: #334155;
+              line-height: 1.65;
+              white-space: pre-wrap;
+            }
+
+            .teacher-review-form {
+              margin: 18px 22px 0;
+              padding: 18px;
+              border: 1px solid #bfdbfe;
+              border-radius: 17px;
+              background: #f8fbff;
+            }
+
+            @media (max-width: 1240px) {
+              .teacher-folder-grid {
+                grid-template-columns: repeat(3, minmax(160px, 1fr));
+              }
+
+              .teacher-homework-collection.is-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+              }
+            }
+
+            @media (max-width: 900px) {
+              .teacher-workflow-heading,
+              .teacher-composer-header {
+                align-items: stretch;
+                flex-direction: column;
+              }
+
+              .teacher-workflow-heading-actions {
+                justify-content: flex-start;
+              }
+
+              .teacher-folder-grid,
+              .teacher-submission-folders {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+              }
+
+              .teacher-homework-collection.is-list .teacher-homework-card {
+                display: flex;
+              }
+
+              .teacher-workflow-toolbar {
+                align-items: stretch;
+                flex-direction: column;
+              }
+
+              .teacher-search-control {
+                min-width: 0;
+              }
+
+              .teacher-composer-grid {
+                grid-template-columns: 1fr;
+              }
+
+              .teacher-review-form {
+                grid-template-columns: 1fr;
+              }
+
+              .teacher-upload-row {
+                grid-template-columns: 1fr;
+              }
+
+              .teacher-submission-row {
+                grid-template-columns: auto minmax(0, 1fr);
+              }
+
+              .teacher-review-button {
+                grid-column: 1 / -1;
+              }
+            }
+
+            @media (max-width: 620px) {
+              .teacher-folder-grid,
+              .teacher-submission-folders,
+              .teacher-homework-collection.is-grid {
+                grid-template-columns: 1fr;
+              }
+
+              .teacher-homework-card-actions,
+              .teacher-modal-footer {
+                flex-direction: column;
+              }
+
+              .teacher-modal-stat-grid {
+                grid-template-columns: 1fr;
+              }
+
+              .teacher-submission-row {
+                grid-template-columns: 1fr;
+              }
+
+              .teacher-submission-avatar {
+                width: 42px;
+                height: 42px;
+              }
+
+              .teacher-submission-title-line {
+                flex-direction: column;
+              }
+
+              .teacher-modal-backdrop {
+                padding: 8px;
+              }
+
+              .teacher-detail-modal {
+                max-height: calc(100vh - 16px);
+                border-radius: 18px;
+              }
+            }
+          `}
+        </style>
         <section style={styles.hero} hidden={activeView !== "overview"}>
           <div style={styles.heroGrid}>
             <div>
@@ -2070,6 +3948,11 @@ export default function TeacherDashboard() {
               label="Assigned Classes"
             />
             <StatCard icon="👨‍🎓" number={dashboardStats.students} label="Students" />
+            <StatCard
+              icon="📘"
+              number={availableSubjects.length}
+              label="Assigned Subjects"
+            />
             <StatCard icon="📚" number={dashboardStats.tasks} label="Homework" />
             <StatCard icon="📝" number={dashboardStats.exams} label="Exams" />
             <StatCard icon="📢" number={dashboardStats.notices} label="Notices" />
@@ -2085,7 +3968,7 @@ export default function TeacherDashboard() {
           <SectionHeader
             icon="👤"
             title="Teacher Profile"
-            subtitle="This makes the account look more like a real app profile system."
+            subtitle="Manage your profile and account settings."
           />
 
           <div style={styles.grid}>
@@ -2153,6 +4036,13 @@ export default function TeacherDashboard() {
                     {item.section ? ` Section ${item.section}` : " All Sections"}
                   </h3>
 
+                  {Array.isArray(item.subjects) &&
+                    item.subjects.length > 0 && (
+                      <p style={styles.muted}>
+                        <b>Subjects:</b> {item.subjects.join(", ")}
+                      </p>
+                    )}
+
                   {Number(selectedClassIndex) === index ? (
                     <p style={{ color: "#16a34a", fontWeight: 900 }}>
                       Currently selected
@@ -2212,268 +4102,1013 @@ export default function TeacherDashboard() {
           )}
         </section>
 
-        <section id="homework" style={styles.card} hidden={activeView !== "homework"}>
-          <SectionHeader
-            icon="📚"
-            title="Homework Creation"
-            subtitle="Create homework with description, due date and optional file."
-          />
-
-          <form onSubmit={handleAddTask}>
-            <div style={styles.formGrid}>
-              <input
-                style={styles.input}
-                placeholder="Homework Title"
-                value={taskTitle}
-                onChange={(e) => setTaskTitle(e.target.value)}
-                required
-              />
-
-              <input
-                style={styles.input}
-                placeholder="Subject"
-                value={taskSubject}
-                onChange={(e) => setTaskSubject(e.target.value)}
-                required
-              />
-
-              <input
-                style={styles.input}
-                type="date"
-                value={taskDue}
-                onChange={(e) => setTaskDue(e.target.value)}
-                required
-              />
-
-              <input
-                key={taskFileKey}
-                style={styles.input}
-                type="file"
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
-                onChange={(e) => setTaskFile(e.target.files?.[0] || null)}
-              />
-            </div>
-
-            <div style={{ marginTop: 16 }}>
-              <label style={styles.label}>Description / Instructions</label>
-              <textarea
-                style={styles.textarea}
-                placeholder="Write homework instructions here"
-                value={taskDesc}
-                onChange={(e) => setTaskDesc(e.target.value)}
-                rows={4}
-              />
-            </div>
-
-            {taskFile && (
-              <p style={styles.muted}>
-                Selected file: <b>{taskFile.name}</b>
+        <section
+          id="homework"
+          style={styles.card}
+          hidden={activeView !== "homework"}
+          className="teacher-workflow-section"
+        >
+          <div className="teacher-workflow-heading">
+            <div>
+              <span className="teacher-eyebrow">Homework workspace</span>
+              <h2>Published Homework</h2>
+              <p>
+                Create assignments, organise them by status and follow every
+                student submission from one place.
               </p>
-            )}
+            </div>
 
-            <button
-              style={{ ...styles.primaryButton, marginTop: 16 }}
-              type="submit"
-              disabled={!currentClassName}
-            >
-              Create Homework
-            </button>
-          </form>
-        </section>
+            <div className="teacher-workflow-heading-actions">
+              <button
+                type="button"
+                className="teacher-soft-button"
+                onClick={fetchDashboardData}
+                disabled={loading}
+              >
+                {loading ? "Refreshing…" : "↻ Refresh"}
+              </button>
 
-        <section id="submissions" style={styles.card} hidden={activeView !== "submissions"}>
-          <SectionHeader
-            icon="✅"
-            title="Homework Submissions and Feedback"
-            subtitle="Check student submissions, download files, give marks and feedback."
-          />
+              <button
+                type="button"
+                className="teacher-primary-action"
+                onClick={() =>
+                  setShowHomeworkComposer((previous) => !previous)
+                }
+              >
+                {showHomeworkComposer ? "Close Creator" : "＋ Create Homework"}
+              </button>
+            </div>
+          </div>
 
-          {tasks.length === 0 ? (
-            <EmptyState text="No homework added yet." />
-          ) : (
-            tasks.map((task, taskIndex) => {
-              const taskKey = getTaskKey(task, taskIndex);
-              const taskFilePath = getTaskFilePath(task);
-              const submissionsList = submissionsByTask[taskKey] || [];
+          <div className="teacher-folder-grid">
+            {HOMEWORK_FILTER_OPTIONS.map((option) => {
+              const countMap = {
+                all: homeworkMetrics.total,
+                recent: homeworkMetrics.recent,
+                "due-soon": homeworkMetrics.dueSoon,
+                "past-due": homeworkMetrics.pastDue,
+                "with-submissions": homeworkMetrics.withSubmissions,
+              };
 
               return (
-                <div style={styles.listCard} key={taskKey}>
-                  <h3>{task.title || "Untitled Homework"}</h3>
+                <button
+                  type="button"
+                  key={option.id}
+                  className={`teacher-folder-card ${
+                    homeworkFilter === option.id ? "is-active" : ""
+                  }`}
+                  onClick={() => setHomeworkFilter(option.id)}
+                >
+                  <span className="teacher-folder-icon">{option.icon}</span>
+                  <span className="teacher-folder-copy">
+                    <strong>{option.label}</strong>
+                    <small>
+                      {countMap[option.id] || 0}{" "}
+                      {(countMap[option.id] || 0) === 1 ? "item" : "items"}
+                    </small>
+                  </span>
+                  <span className="teacher-folder-count">
+                    {countMap[option.id] || 0}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-                  <p>
-                    <b>Subject:</b> {task.subject || "N/A"}
-                  </p>
-
-                  <p>
-                    <b>Description:</b> {task.description || "No description"}
-                  </p>
-
-                  <p>
-                    <b>Class:</b> {task.className || currentClassName}{" "}
-                    <b>Section:</b> {task.section || currentSection || "N/A"}
-                  </p>
-
-                  {task.dueDate && (
+          {showHomeworkComposer && (
+            <form
+              onSubmit={handleAddTask}
+              className="teacher-composer-panel"
+            >
+              <div className="teacher-composer-header">
+                <div>
+                  <span className="teacher-composer-icon">📝</span>
+                  <div>
+                    <h3>Create a new assignment</h3>
                     <p>
-                      <b>Due Date:</b>{" "}
-                      {new Date(task.dueDate).toLocaleDateString()}
+                      It will be delivered to Class {currentClassName || "N/A"}
+                      {currentSection ? `, Section ${currentSection}` : ""}.
                     </p>
-                  )}
+                  </div>
+                </div>
 
-                  {taskFilePath ? (
-                    <>
-                      <p>
-                        <b>Teacher Attached File:</b>{" "}
-                        {getFileNameFromPath(taskFilePath)}
-                      </p>
-                      <FileActions
-                        filePath={taskFilePath}
-                        downloadLabel="Download Homework File"
-                      />
-                    </>
-                  ) : (
-                    <p style={styles.muted}>No teacher file attached.</p>
-                  )}
+                <span className="teacher-class-target">
+                  🎓 {studentsForCurrentClass.length} student
+                  {studentsForCurrentClass.length === 1 ? "" : "s"}
+                </span>
+              </div>
 
-                  <hr style={{ margin: "22px 0", borderColor: "#e2e8f0" }} />
+              <div className="teacher-subject-summary">
+                <span>📚 {availableSubjects.length} available subject{availableSubjects.length === 1 ? "" : "s"}</span>
+                <span>🏫 Class {currentClassName || "N/A"}{currentSection ? ` · ${currentSection}` : ""}</span>
+                {currentStream && <span>🎓 {currentStream}</span>}
+                {currentAcademicYear && (
+                  <span>🗓️ Academic year {currentAcademicYear}</span>
+                )}
+              </div>
 
-                  <h4>Student Submissions</h4>
+              {subjectsMessage && (
+                <div className="teacher-subject-warning">
+                  {subjectsMessage}
+                </div>
+              )}
 
-                  {submissionsList.length === 0 ? (
-                    <EmptyState text="No submissions yet." />
-                  ) : (
-                    submissionsList.map((submission, submissionIndex) => {
-                      const submissionFilePath = getSubmissionFilePath(submission);
-                      const review = getDisplaySubmissionReview(
-                        task,
-                        submission,
-                        submissionIndex
+              <div className="teacher-composer-grid">
+                <div className="teacher-field">
+                  <label>Homework title</label>
+                  <input
+                    value={taskTitle}
+                    onChange={(event) => setTaskTitle(event.target.value)}
+                    placeholder="e.g. Algebra practice"
+                    required
+                  />
+                </div>
+
+                <div className="teacher-field">
+                  <label>Subject</label>
+                  <select
+                    value={taskSubjectId}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      const selected = availableSubjects.find(
+                        (subject) =>
+                          getSubjectOptionValue(subject) === value
                       );
+
+                      setTaskSubjectId(value);
+                      setTaskSubject(
+                        selected ? getSubjectName(selected) : ""
+                      );
+                    }}
+                    disabled={
+                      loadingSubjects || availableSubjects.length === 0
+                    }
+                    required
+                  >
+                    <option value="">
+                      {loadingSubjects
+                        ? "Loading subjects…"
+                        : availableSubjects.length === 0
+                        ? "No subjects configured"
+                        : "Select a subject"}
+                    </option>
+
+                    {availableSubjects.map((subject) => {
+                      const name = getSubjectName(subject);
+                      const code = getSubjectCode(subject);
 
                       return (
-                        <div style={styles.listCard} key={review.reviewKey}>
-                          <p>
-                            <b>Student:</b>{" "}
-                            {submission.studentName ||
-                              submission.student?.name ||
-                              submission.studentId?.name ||
-                              getStudentName(getStudentIdFromSubmission(submission))}
-                          </p>
-
-                          <p>
-                            <b>Email:</b>{" "}
-                            {submission.studentEmail ||
-                              submission.student?.email ||
-                              submission.studentId?.email ||
-                              getStudentEmail(getStudentIdFromSubmission(submission)) ||
-                              "N/A"}
-                          </p>
-
-                          {(submission.answer || submission.submissionText) && (
-                            <p>
-                              <b>Answer:</b>{" "}
-                              {submission.answer || submission.submissionText}
-                            </p>
-                          )}
-
-                          {submission.submittedAt && (
-                            <p>
-                              <b>Submitted At:</b>{" "}
-                              {new Date(submission.submittedAt).toLocaleString()}
-                            </p>
-                          )}
-
-                          {submissionFilePath ? (
-                            <>
-                              <p>
-                                <b>Submitted File:</b>{" "}
-                                {getFileNameFromPath(submissionFilePath)}
-                              </p>
-
-                              <FileActions
-                                filePath={submissionFilePath}
-                                downloadLabel="Download Submitted File"
-                              />
-                            </>
-                          ) : (
-                            <p style={styles.muted}>No submitted file.</p>
-                          )}
-
-                          <div style={{ ...styles.formGrid, marginTop: 16 }}>
-                            <input
-                              style={styles.input}
-                              type="number"
-                              placeholder="Marks"
-                              value={review.marks}
-                              onChange={(e) =>
-                                handleSubmissionReviewChange(
-                                  review.reviewKey,
-                                  "marks",
-                                  e.target.value
-                                )
-                              }
-                            />
-
-                            <select
-                              style={styles.input}
-                              value={review.status}
-                              onChange={(e) =>
-                                handleSubmissionReviewChange(
-                                  review.reviewKey,
-                                  "status",
-                                  e.target.value
-                                )
-                              }
-                            >
-                              <option value="Submitted">Submitted</option>
-                              <option value="Checked">Checked</option>
-                              <option value="Needs Improvement">Needs Improvement</option>
-                              <option value="Late">Late</option>
-                            </select>
-                          </div>
-
-                          <div style={{ marginTop: 16 }}>
-                            <label style={styles.label}>Feedback</label>
-                            <textarea
-                              style={styles.textarea}
-                              placeholder="Write feedback for student"
-                              value={review.feedback}
-                              onChange={(e) =>
-                                handleSubmissionReviewChange(
-                                  review.reviewKey,
-                                  "feedback",
-                                  e.target.value
-                                )
-                              }
-                              rows={3}
-                            />
-                          </div>
-
-                          <button
-                            style={{ ...styles.primaryButton, marginTop: 14 }}
-                            type="button"
-                            onClick={() =>
-                              handleSaveSubmissionReview(
-                                task,
-                                submission,
-                                submissionIndex
-                              )
-                            }
-                            disabled={savingReviewKey === review.reviewKey}
-                          >
-                            {savingReviewKey === review.reviewKey
-                              ? "Saving..."
-                              : "Save Marks and Feedback"}
-                          </button>
-                        </div>
+                        <option
+                          key={getSubjectOptionValue(subject)}
+                          value={getSubjectOptionValue(subject)}
+                        >
+                          {name}
+                          {code ? ` (${code})` : ""}
+                          {subject.type ? ` — ${subject.type}` : ""}
+                        </option>
                       );
-                    })
-                  )}
+                    })}
+                  </select>
+                  <small className="teacher-subject-help">
+                    Only subjects connected to this teacher and class are shown.
+                  </small>
                 </div>
-              );
-            })
+
+                <div className="teacher-field">
+                  <label>Due date</label>
+                  <input
+                    type="date"
+                    value={taskDue}
+                    onChange={(event) => setTaskDue(event.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="teacher-field teacher-field-wide">
+                <label>Description and instructions</label>
+                <textarea
+                  value={taskDesc}
+                  onChange={(event) => setTaskDesc(event.target.value)}
+                  placeholder="Explain the task, expected work and any important instructions."
+                  rows={5}
+                />
+              </div>
+
+              <div className="teacher-upload-row">
+                <label className="teacher-upload-box">
+                  <input
+                    key={taskFileKey}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.txt"
+                    onChange={(event) =>
+                      setTaskFile(event.target.files?.[0] || null)
+                    }
+                  />
+                  <span className="teacher-upload-icon">📎</span>
+                  <span>
+                    <strong>
+                      {taskFile ? taskFile.name : "Attach a homework file"}
+                    </strong>
+                    <small>
+                      PDF, Word, PowerPoint, Excel, image or text — maximum
+                      10 MB
+                    </small>
+                  </span>
+                </label>
+
+                <button
+                  type="submit"
+                  className="teacher-primary-action teacher-create-submit"
+                  disabled={
+                    !currentClassName ||
+                    !selectedTaskSubject ||
+                    loadingSubjects ||
+                    savingTask
+                  }
+                >
+                  {savingTask ? "Publishing…" : "Publish Homework"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="teacher-workflow-toolbar">
+            <label className="teacher-search-control">
+              <span>⌕</span>
+              <input
+                value={homeworkSearch}
+                onChange={(event) =>
+                  setHomeworkSearch(event.target.value)
+                }
+                placeholder="Search homework or subject"
+              />
+            </label>
+
+            <select
+              className="teacher-sort-control"
+              value={homeworkSubjectFilter}
+              onChange={(event) =>
+                setHomeworkSubjectFilter(event.target.value)
+              }
+            >
+              <option value="all">All subjects</option>
+              {availableSubjects.map((subject) => (
+                <option
+                  key={`filter-${getSubjectOptionValue(subject)}`}
+                  value={getSubjectOptionValue(subject)}
+                >
+                  {getSubjectName(subject)}
+                  {getSubjectCode(subject)
+                    ? ` (${getSubjectCode(subject)})`
+                    : ""}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="teacher-sort-control"
+              value={homeworkSort}
+              onChange={(event) =>
+                setHomeworkSort(event.target.value)
+              }
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="due-first">Due date first</option>
+              <option value="title">Title A–Z</option>
+            </select>
+
+            <div className="teacher-view-toggle">
+              <button
+                type="button"
+                className={
+                  homeworkViewMode === "grid" ? "is-active" : ""
+                }
+                onClick={() => setHomeworkViewMode("grid")}
+                aria-label="Grid view"
+              >
+                ▦
+              </button>
+              <button
+                type="button"
+                className={
+                  homeworkViewMode === "list" ? "is-active" : ""
+                }
+                onClick={() => setHomeworkViewMode("list")}
+                aria-label="List view"
+              >
+                ☷
+              </button>
+            </div>
+          </div>
+
+          {teacherTasks.length === 0 ? (
+            <div className="teacher-professional-empty">
+              <span>📚</span>
+              <h3>No homework published yet</h3>
+              <p>
+                Create your first assignment and it will appear here and on
+                the correct students’ homework page.
+              </p>
+              {!showHomeworkComposer && (
+                <button
+                  type="button"
+                  className="teacher-primary-action"
+                  onClick={() => setShowHomeworkComposer(true)}
+                >
+                  Create First Homework
+                </button>
+              )}
+            </div>
+          ) : visibleHomework.length === 0 ? (
+            <div className="teacher-professional-empty">
+              <span>🔎</span>
+              <h3>No matching homework</h3>
+              <p>Try a different folder, search word or sorting option.</p>
+            </div>
+          ) : (
+            <div
+              className={`teacher-homework-collection ${
+                homeworkViewMode === "list" ? "is-list" : "is-grid"
+              }`}
+            >
+              {visibleHomework.map((task, taskIndex) => {
+                const taskKey = getTaskKey(task, taskIndex);
+                const submissionList =
+                  getTaskSubmissionList(task, taskIndex);
+                const dueDate = task?.dueDate || task?.deadline;
+                const pastDue = isDatePast(dueDate);
+                const dueSoon = isDateDueSoon(dueDate);
+                const recentlyAdded = isRecentlyCreated(
+                  task?.createdAt || task?.date
+                );
+                const taskFilePath = getTaskFilePath(task);
+
+                const statusClass = pastDue
+                  ? "is-overdue"
+                  : dueSoon
+                  ? "is-due-soon"
+                  : "is-open";
+
+                const statusLabel = pastDue
+                  ? "Past due"
+                  : dueSoon
+                  ? "Due soon"
+                  : "Open";
+
+                return (
+                  <article
+                    className={`teacher-homework-card ${statusClass}`}
+                    key={taskKey}
+                  >
+                    <div className="teacher-homework-card-top">
+                      <div className="teacher-homework-file-icon">
+                        {taskFilePath ? "📄" : "📘"}
+                      </div>
+
+                      <div className="teacher-homework-card-heading">
+                        <div className="teacher-homework-badges">
+                          <span className={`teacher-status-pill ${statusClass}`}>
+                            {statusLabel}
+                          </span>
+                          {recentlyAdded && (
+                            <span className="teacher-status-pill is-new">
+                              New
+                            </span>
+                          )}
+                        </div>
+
+                        <h3>{task.title || "Untitled Homework"}</h3>
+                        <p>{getRecordSubjectName(task) || "No subject"}</p>
+                      </div>
+                    </div>
+
+                    <p className="teacher-homework-description">
+                      {task.description ||
+                        "No description was added for this homework."}
+                    </p>
+
+                    <div className="teacher-homework-meta-grid">
+                      <div>
+                        <span>Due date</span>
+                        <strong>{formatDisplayDate(dueDate)}</strong>
+                      </div>
+                      <div>
+                        <span>Submissions</span>
+                        <strong>
+                          {submissionList.length}/
+                          {studentsForCurrentClass.length}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Attachment</span>
+                        <strong>{taskFilePath ? "Included" : "None"}</strong>
+                      </div>
+                    </div>
+
+                    <div className="teacher-homework-progress">
+                      <span
+                        style={{
+                          width: `${
+                            studentsForCurrentClass.length > 0
+                              ? Math.min(
+                                  100,
+                                  Math.round(
+                                    (submissionList.length /
+                                      studentsForCurrentClass.length) *
+                                      100
+                                  )
+                                )
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="teacher-homework-card-actions">
+                      <button
+                        type="button"
+                        className="teacher-soft-button"
+                        onClick={() =>
+                          setSelectedHomeworkTask({
+                            task,
+                            taskIndex,
+                          })
+                        }
+                      >
+                        View Details
+                      </button>
+
+                      <button
+                        type="button"
+                        className="teacher-primary-action"
+                        onClick={() => {
+                          setSubmissionFilter("all");
+                          setSubmissionSearch(task.title || "");
+                          openView("submissions");
+                        }}
+                      >
+                        Review {submissionList.length} Submission
+                        {submissionList.length === 1 ? "" : "s"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           )}
         </section>
+
+        <section
+          id="submissions"
+          style={styles.card}
+          hidden={activeView !== "submissions"}
+          className="teacher-workflow-section"
+        >
+          <div className="teacher-workflow-heading">
+            <div>
+              <span className="teacher-eyebrow">Student work</span>
+              <h2>Homework Submissions</h2>
+              <p>
+                Review student submissions, provide feedback and marks.
+              </p>
+            </div>
+
+            <div className="teacher-workflow-heading-actions">
+              <button
+                type="button"
+                className="teacher-soft-button"
+                onClick={fetchDashboardData}
+                disabled={loading}
+              >
+                {loading ? "Refreshing…" : "↻ Refresh"}
+              </button>
+              <button
+                type="button"
+                className="teacher-primary-action"
+                onClick={() => openView("homework")}
+              >
+                View Homework
+              </button>
+            </div>
+          </div>
+
+          <div className="teacher-folder-grid teacher-submission-folders">
+            {SUBMISSION_FILTER_OPTIONS.map((option) => {
+              const count = submissionMetrics[option.id] || 0;
+
+              return (
+                <button
+                  type="button"
+                  key={option.id}
+                  className={`teacher-folder-card ${
+                    submissionFilter === option.id ? "is-active" : ""
+                  }`}
+                  onClick={() => setSubmissionFilter(option.id)}
+                >
+                  <span className="teacher-folder-icon">{option.icon}</span>
+                  <span className="teacher-folder-copy">
+                    <strong>{option.label}</strong>
+                    <small>
+                      {count} {count === 1 ? "submission" : "submissions"}
+                    </small>
+                  </span>
+                  <span className="teacher-folder-count">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="teacher-workflow-toolbar">
+            <label className="teacher-search-control">
+              <span>⌕</span>
+              <input
+                value={submissionSearch}
+                onChange={(event) =>
+                  setSubmissionSearch(event.target.value)
+                }
+                placeholder="Search student, homework or subject"
+              />
+            </label>
+
+            <div className="teacher-submission-summary">
+              <span>
+                <b>{submissionMetrics.new}</b> need review
+              </span>
+              <span>
+                <b>{submissionMetrics.reviewed}</b> reviewed
+              </span>
+            </div>
+          </div>
+
+          {teacherTasks.length === 0 ? (
+            <div className="teacher-professional-empty">
+              <span>📚</span>
+              <h3>No homework available</h3>
+              <p>
+                Publish homework first. Student submissions will then appear
+                here automatically.
+              </p>
+              <button
+                type="button"
+                className="teacher-primary-action"
+                onClick={() => openView("homework")}
+              >
+                Create Homework
+              </button>
+            </div>
+          ) : submissionRows.length === 0 ? (
+            <div className="teacher-professional-empty">
+              <span>📥</span>
+              <h3>No student submissions yet</h3>
+              <p>
+                Your published homework is visible to the selected class.
+                Submitted work will appear here after students send it.
+              </p>
+            </div>
+          ) : visibleSubmissionRows.length === 0 ? (
+            <div className="teacher-professional-empty">
+              <span>🔎</span>
+              <h3>No matching submissions</h3>
+              <p>Change the folder or clear the search box.</p>
+            </div>
+          ) : (
+            <div className="teacher-submission-list">
+              {visibleSubmissionRows.map((row) => {
+                const {
+                  task,
+                  submission,
+                  review,
+                  reviewed,
+                  late,
+                } = row;
+
+                const studentId =
+                  getStudentIdFromSubmission(submission);
+
+                const studentName =
+                  submission.studentName ||
+                  submission.student?.name ||
+                  submission.studentId?.name ||
+                  getStudentName(studentId);
+
+                const studentEmail =
+                  submission.studentEmail ||
+                  submission.student?.email ||
+                  submission.studentId?.email ||
+                  getStudentEmail(studentId);
+
+                const submissionFilePath =
+                  getSubmissionFilePath(submission);
+
+                return (
+                  <article
+                    className={`teacher-submission-row ${
+                      reviewed ? "is-reviewed" : "is-new"
+                    }`}
+                    key={review.reviewKey}
+                  >
+                    <div className="teacher-submission-avatar">
+                      {String(studentName || "S")
+                        .trim()
+                        .charAt(0)
+                        .toUpperCase()}
+                    </div>
+
+                    <div className="teacher-submission-main">
+                      <div className="teacher-submission-title-line">
+                        <div>
+                          <h3>{studentName || "Student"}</h3>
+                          <p>{studentEmail || "No email available"}</p>
+                        </div>
+
+                        <div className="teacher-homework-badges">
+                          {late && (
+                            <span className="teacher-status-pill is-overdue">
+                              Late
+                            </span>
+                          )}
+                          <span
+                            className={`teacher-status-pill ${
+                              reviewed ? "is-reviewed" : "is-new"
+                            }`}
+                          >
+                            {reviewed ? "Reviewed" : "Needs review"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="teacher-submission-task-line">
+                        <strong>{task.title || "Untitled Homework"}</strong>
+                        <span>•</span>
+                        <span>{getRecordSubjectName(task) || "No subject"}</span>
+                      </div>
+
+                      <div className="teacher-submission-meta">
+                        <span>
+                          🕒{" "}
+                          {formatDisplayDateTime(
+                            submission.submittedAt ||
+                              submission.createdAt
+                          )}
+                        </span>
+                        <span>
+                          {submissionFilePath
+                            ? "📎 File attached"
+                            : "📝 Text response"}
+                        </span>
+                        {hasValue(review.marks) && (
+                          <span>🏅 Marks: {review.marks}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="teacher-primary-action teacher-review-button"
+                      onClick={() =>
+                        setSelectedSubmissionContext(row)
+                      }
+                    >
+                      {reviewed ? "Open Review" : "Review Work"}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {selectedHomeworkTask &&
+          (() => {
+            const { task, taskIndex } = selectedHomeworkTask;
+            const taskFilePath = getTaskFilePath(task);
+            const submissionList =
+              getTaskSubmissionList(task, taskIndex);
+            const dueDate = task?.dueDate || task?.deadline;
+
+            return (
+              <div
+                className="teacher-modal-backdrop"
+                role="presentation"
+                onMouseDown={() => setSelectedHomeworkTask(null)}
+              >
+                <section
+                  className="teacher-detail-modal"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Homework details"
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  <div className="teacher-modal-header">
+                    <div>
+                      <span className="teacher-eyebrow">Homework details</span>
+                      <h2>{task.title || "Untitled Homework"}</h2>
+                      <p>{getRecordSubjectName(task) || "No subject"}</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="teacher-modal-close"
+                      onClick={() => setSelectedHomeworkTask(null)}
+                      aria-label="Close homework details"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="teacher-modal-stat-grid">
+                    <div>
+                      <span>Class</span>
+                      <strong>
+                        {task.className || currentClassName}
+                        {task.section || currentSection
+                          ? ` · ${task.section || currentSection}`
+                          : ""}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Due date</span>
+                      <strong>{formatDisplayDate(dueDate)}</strong>
+                    </div>
+                    <div>
+                      <span>Submissions</span>
+                      <strong>
+                        {submissionList.length}/
+                        {studentsForCurrentClass.length}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="teacher-modal-section">
+                    <h3>Instructions</h3>
+                    <p>
+                      {task.description ||
+                        "No description was added for this homework."}
+                    </p>
+                  </div>
+
+                  <div className="teacher-modal-section">
+                    <h3>Teacher attachment</h3>
+                    {taskFilePath ? (
+                      <>
+                        <p>{getFileNameFromPath(taskFilePath)}</p>
+                        <FileActions
+                          filePath={taskFilePath}
+                          downloadLabel="Download Attachment"
+                        />
+                      </>
+                    ) : (
+                      <p style={styles.muted}>No file attached.</p>
+                    )}
+                  </div>
+
+                  <div className="teacher-modal-footer">
+                    <button
+                      type="button"
+                      className="teacher-soft-button"
+                      onClick={() => setSelectedHomeworkTask(null)}
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="button"
+                      className="teacher-primary-action"
+                      onClick={() => {
+                        setSubmissionFilter("all");
+                        setSubmissionSearch(task.title || "");
+                        setSelectedHomeworkTask(null);
+                        openView("submissions");
+                      }}
+                    >
+                      Open Submissions
+                    </button>
+                  </div>
+                </section>
+              </div>
+            );
+          })()}
+
+        {selectedSubmissionContext &&
+          (() => {
+            const {
+              task,
+              submission,
+              submissionIndex,
+              review,
+              reviewed,
+              late,
+            } = selectedSubmissionContext;
+
+            const currentReview = getDisplaySubmissionReview(
+              task,
+              submission,
+              submissionIndex
+            );
+
+            const studentId =
+              getStudentIdFromSubmission(submission);
+
+            const studentName =
+              submission.studentName ||
+              submission.student?.name ||
+              submission.studentId?.name ||
+              getStudentName(studentId);
+
+            const studentEmail =
+              submission.studentEmail ||
+              submission.student?.email ||
+              submission.studentId?.email ||
+              getStudentEmail(studentId);
+
+            const submissionFilePath =
+              getSubmissionFilePath(submission);
+
+            return (
+              <div
+                className="teacher-modal-backdrop"
+                role="presentation"
+                onMouseDown={() =>
+                  setSelectedSubmissionContext(null)
+                }
+              >
+                <section
+                  className="teacher-detail-modal teacher-review-modal"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Review student submission"
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  <div className="teacher-modal-header">
+                    <div>
+                      <span className="teacher-eyebrow">
+                        {reviewed ? "Submission review" : "New submission"}
+                      </span>
+                      <h2>{studentName || "Student"}</h2>
+                      <p>
+                        {task.title || "Homework"} ·{" "}
+                        {getRecordSubjectName(task) || "No subject"}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="teacher-modal-close"
+                      onClick={() =>
+                        setSelectedSubmissionContext(null)
+                      }
+                      aria-label="Close submission review"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="teacher-review-student-strip">
+                    <div className="teacher-submission-avatar">
+                      {String(studentName || "S")
+                        .trim()
+                        .charAt(0)
+                        .toUpperCase()}
+                    </div>
+                    <div>
+                      <strong>{studentName || "Student"}</strong>
+                      <span>{studentEmail || "No email available"}</span>
+                    </div>
+                    <div className="teacher-homework-badges">
+                      {late && (
+                        <span className="teacher-status-pill is-overdue">
+                          Late
+                        </span>
+                      )}
+                      <span
+                        className={`teacher-status-pill ${
+                          reviewed ? "is-reviewed" : "is-new"
+                        }`}
+                      >
+                        {currentReview.status || "Submitted"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="teacher-modal-section">
+                    <h3>Student answer</h3>
+                    <div className="teacher-answer-panel">
+                      {submission.answer ||
+                        submission.submissionText ||
+                        "No written answer was submitted."}
+                    </div>
+                  </div>
+
+                  <div className="teacher-modal-section">
+                    <h3>Submitted attachment</h3>
+                    {submissionFilePath ? (
+                      <>
+                        <p>
+                          {getFileNameFromPath(submissionFilePath)}
+                        </p>
+                        <FileActions
+                          filePath={submissionFilePath}
+                          downloadLabel="Download Student File"
+                        />
+                      </>
+                    ) : (
+                      <p style={styles.muted}>
+                        No student file was attached.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="teacher-review-form">
+                    <div className="teacher-field">
+                      <label>Marks</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Enter marks"
+                        value={currentReview.marks}
+                        onChange={(event) =>
+                          handleSubmissionReviewChange(
+                            currentReview.reviewKey,
+                            "marks",
+                            event.target.value
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="teacher-field">
+                      <label>Review status</label>
+                      <select
+                        value={currentReview.status}
+                        onChange={(event) =>
+                          handleSubmissionReviewChange(
+                            currentReview.reviewKey,
+                            "status",
+                            event.target.value
+                          )
+                        }
+                      >
+                        <option value="Submitted">Submitted</option>
+                        <option value="Checked">Checked</option>
+                        <option value="Needs Improvement">
+                          Needs Improvement
+                        </option>
+                        <option value="Late">Late</option>
+                      </select>
+                    </div>
+
+                    <div className="teacher-field teacher-field-wide">
+                      <label>Feedback for the student</label>
+                      <textarea
+                        rows={4}
+                        placeholder="Write clear and helpful feedback."
+                        value={currentReview.feedback}
+                        onChange={(event) =>
+                          handleSubmissionReviewChange(
+                            currentReview.reviewKey,
+                            "feedback",
+                            event.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="teacher-modal-footer">
+                    <button
+                      type="button"
+                      className="teacher-soft-button"
+                      onClick={() =>
+                        setSelectedSubmissionContext(null)
+                      }
+                    >
+                      Close
+                    </button>
+
+                    <button
+                      type="button"
+                      className="teacher-primary-action"
+                      disabled={
+                        savingReviewKey === currentReview.reviewKey
+                      }
+                      onClick={async () => {
+                        await handleSaveSubmissionReview(
+                          task,
+                          submission,
+                          submissionIndex
+                        );
+                      }}
+                    >
+                      {savingReviewKey === currentReview.reviewKey
+                        ? "Saving Review…"
+                        : "Save Marks & Feedback"}
+                    </button>
+                  </div>
+                </section>
+              </div>
+            );
+          })()}
 
         <section id="attendance" style={styles.card} hidden={activeView !== "attendance"}>
           <SectionHeader
@@ -2621,13 +5256,46 @@ export default function TeacherDashboard() {
                 required
               />
 
-              <input
+              <select
                 style={styles.input}
-                placeholder="Subject"
-                value={examSubject}
-                onChange={(e) => setExamSubject(e.target.value)}
+                value={examSubjectId}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const selected = availableSubjects.find(
+                    (subject) =>
+                      getSubjectOptionValue(subject) === value
+                  );
+
+                  setExamSubjectId(value);
+                  setExamSubject(
+                    selected ? getSubjectName(selected) : ""
+                  );
+                }}
+                disabled={
+                  loadingSubjects || availableSubjects.length === 0
+                }
                 required
-              />
+              >
+                <option value="">
+                  {loadingSubjects
+                    ? "Loading subjects…"
+                    : availableSubjects.length === 0
+                    ? "No subjects configured"
+                    : "Select subject"}
+                </option>
+
+                {availableSubjects.map((subject) => (
+                  <option
+                    key={`exam-${getSubjectOptionValue(subject)}`}
+                    value={getSubjectOptionValue(subject)}
+                  >
+                    {getSubjectName(subject)}
+                    {getSubjectCode(subject)
+                      ? ` (${getSubjectCode(subject)})`
+                      : ""}
+                  </option>
+                ))}
+              </select>
 
               <input
                 style={styles.input}
@@ -2650,7 +5318,12 @@ export default function TeacherDashboard() {
             <button
               style={{ ...styles.primaryButton, marginTop: 16 }}
               type="submit"
-              disabled={!currentClassName || savingExam}
+              disabled={
+                !currentClassName ||
+                !selectedExamSubject ||
+                loadingSubjects ||
+                savingExam
+              }
             >
               {savingExam ? "Saving..." : "Add Exam"}
             </button>
@@ -2672,7 +5345,7 @@ export default function TeacherDashboard() {
                 )}
 
                 <p>
-                  <b>Subject:</b> {exam.subject || "N/A"}
+                  <b>Subject:</b> {getRecordSubjectName(exam) || "N/A"}
                 </p>
 
                 {exam.date && (

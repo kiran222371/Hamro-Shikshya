@@ -15,6 +15,7 @@ import noticeRoutes from "./routes/notice.js";
 import subjectRoutes from "./routes/subjects.js";
 import schoolRoutes from "./routes/school.js";
 import notificationRoutes from "./routes/notifications.js";
+import timetableRoutes from "./routes/timetable.js";
 
 import School from "./models/School.js";
 import {
@@ -1882,6 +1883,12 @@ const registerRoutes = async () => {
 
   app.use("/api/school", schoolRoutes);
   app.use("/api/schools", schoolRoutes);
+
+  /*
+    Weekly timetable routes for Admin, Teacher and Student portals.
+  */
+  app.use("/api/timetable", timetableRoutes);
+  app.use("/api/timetables", timetableRoutes);
 
   await registerOptionalRoute(
     "./routes/reports.js",

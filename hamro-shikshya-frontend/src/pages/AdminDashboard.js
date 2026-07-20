@@ -10,6 +10,11 @@ import api, {
   deleteSubject,
   getSchoolProfile,
   saveSchoolProfile,
+  createTimetable,
+  getTimetable,
+  updateTimetable,
+  deleteTimetable,
+  getArrayFromApiResponse,
   GOOGLE_MAPS_API_KEY,
 } from "../api";
 import PortalLayout from "../components/PortalLayout";
@@ -23,6 +28,7 @@ const ADMIN_NAVIGATION = [
   { to: "/admin/overview", label: "Overview", icon: "▦" },
   { to: "/admin/school", label: "School Profile", icon: "🏫" },
   { to: "/admin/subjects", label: "Subjects", icon: "📚" },
+  { to: "/admin/timetable", label: "Timetable", icon: "🗓️" },
   { to: "/admin/reports", label: "Reports", icon: "📊" },
   { to: "/admin/create-user", label: "Add User", icon: "➕" },
   { to: "/admin/users", label: "User Management", icon: "⚙️" },
@@ -57,9 +63,39 @@ const SUBJECT_TYPES = [
   "Local Curriculum",
 ];
 
+const TIMETABLE_DAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+const TIMETABLE_CLASS_TYPES = [
+  "Regular Class",
+  "Practical",
+  "Lab",
+  "Tutorial",
+  "Assembly",
+  "Break",
+  "Other",
+];
+
+const TEACHING_TIMETABLE_TYPES = new Set([
+  "Regular Class",
+  "Practical",
+  "Lab",
+  "Tutorial",
+]);
+
 const emptyAssignedClass = {
   className: "",
   section: "",
+  stream: "General",
+  subjectIds: [],
+  subjects: [],
 };
 
 const emptyCreateForm = {
@@ -69,6 +105,10 @@ const emptyCreateForm = {
   role: "teacher",
   className: "",
   section: "",
+  stream: "",
+  academicYear: "",
+  subjectEnrollmentMode: "stream",
+  subjectIds: [],
   assignedClasses: [{ ...emptyAssignedClass }],
 };
 
@@ -81,10 +121,123 @@ const emptySubjectForm = {
   type: "Compulsory",
 };
 
+const emptyTimetableForm = {
+  className: "",
+  section: "",
+  stream: "General",
+  academicYear: "",
+  dayOfWeek: "Sunday",
+  startTime: "",
+  endTime: "",
+  periodNumber: "",
+  subjectId: "",
+  subjectName: "",
+  subjectCode: "",
+  teacherId: "",
+  teacherName: "",
+  room: "",
+  classType: "Regular Class",
+  notes: "",
+  validFrom: "",
+  validUntil: "",
+  isActive: true,
+};
+
 const getId = (item) => item?._id || item?.id || item?.userId || "";
 
 const getSubjectId = (subject) =>
   subject?._id || subject?.id || subject?.subjectId || "";
+
+const getTimetableId = (entry) =>
+  entry?._id || entry?.id || entry?.timetableId || "";
+
+const toDateInputValue = (value) => {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toISOString().slice(0, 10);
+};
+
+const normaliseTimetableEntry = (entry = {}) => {
+  const subject =
+    entry.subjectId && typeof entry.subjectId === "object"
+      ? entry.subjectId
+      : {};
+
+  const teacher =
+    entry.teacherId && typeof entry.teacherId === "object"
+      ? entry.teacherId
+      : {};
+
+  return {
+    ...entry,
+    id: getTimetableId(entry),
+    className: String(entry.className || entry.class || "").trim(),
+    section: String(entry.section || "").trim(),
+    stream: String(entry.stream || "General").trim() || "General",
+    academicYear: String(entry.academicYear || "").trim(),
+    dayOfWeek: String(entry.dayOfWeek || entry.day || "").trim(),
+    startTime: String(entry.startTime || entry.start || "").trim(),
+    endTime: String(entry.endTime || entry.end || "").trim(),
+    periodNumber:
+      entry.periodNumber === undefined || entry.periodNumber === null
+        ? ""
+        : entry.periodNumber,
+    subjectId:
+      subject?._id ||
+      subject?.id ||
+      (typeof entry.subjectId === "string" ? entry.subjectId : ""),
+    subjectName:
+      entry.subjectName ||
+      subject?.name ||
+      subject?.subjectName ||
+      (typeof entry.subject === "string" ? entry.subject : ""),
+    subjectCode:
+      entry.subjectCode ||
+      subject?.subjectCode ||
+      subject?.code ||
+      "",
+    teacherId:
+      teacher?._id ||
+      teacher?.id ||
+      (typeof entry.teacherId === "string" ? entry.teacherId : ""),
+    teacherName:
+      entry.teacherName ||
+      teacher?.name ||
+      "",
+    room: String(entry.room || "").trim(),
+    classType: String(entry.classType || entry.type || "Regular Class").trim(),
+    notes: String(entry.notes || entry.description || "").trim(),
+    validFrom: entry.validFrom || "",
+    validUntil: entry.validUntil || "",
+    isActive: entry.isActive !== false,
+  };
+};
+
+const sortTimetableEntries = (entries = []) => {
+  const dayOrder = new Map(
+    TIMETABLE_DAYS.map((day, index) => [day, index])
+  );
+
+  return [...entries].sort((a, b) => {
+    const dayDifference =
+      (dayOrder.get(a.dayOfWeek) ?? 99) -
+      (dayOrder.get(b.dayOfWeek) ?? 99);
+
+    if (dayDifference !== 0) return dayDifference;
+
+    const timeDifference = String(a.startTime || "").localeCompare(
+      String(b.startTime || "")
+    );
+
+    if (timeDifference !== 0) return timeDifference;
+
+    return Number(a.periodNumber || 0) - Number(b.periodNumber || 0);
+  });
+};
 
 const safeReadStorage = (key, fallback) => {
   try {
@@ -277,6 +430,227 @@ const normaliseSubject = (subject) => {
   };
 };
 
+const getSubjectSections = (subject) => {
+  if (Array.isArray(subject?.sections) && subject.sections.length > 0) {
+    return subject.sections.map((value) => String(value || "").trim());
+  }
+
+  return [String(subject?.section || "All").trim() || "All"];
+};
+
+const isSubjectAvailableForStudent = (subject, studentForm) => {
+  if (!subject || subject.isActive === false) return false;
+
+  const selectedClass = String(studentForm?.className || "").trim();
+  const selectedSection = String(studentForm?.section || "").trim();
+  const selectedStream = String(studentForm?.stream || "").trim();
+  const subjectClass = String(subject.className || subject.class || "").trim();
+  const subjectStream = String(subject.stream || "General").trim();
+  const subjectSections = getSubjectSections(subject);
+
+  if (!selectedClass || subjectClass !== selectedClass) return false;
+
+  const sectionMatches =
+    !selectedSection ||
+    subjectSections.some(
+      (value) =>
+        value.toLowerCase() === "all" ||
+        value.toLowerCase() === selectedSection.toLowerCase()
+    );
+
+  if (!sectionMatches) return false;
+
+  const classNumber = Number(selectedClass);
+
+  if (classNumber >= 11) {
+    if (!selectedStream) return false;
+
+    return (
+      subjectStream.toLowerCase() === selectedStream.toLowerCase() ||
+      subjectStream.toLowerCase() === "general"
+    );
+  }
+
+  return (
+    !subjectStream ||
+    subjectStream.toLowerCase() === "general"
+  );
+};
+
+const getStudentSubjectOptions = (allSubjects, studentForm) => {
+  return allSubjects
+    .filter((subject) => isSubjectAvailableForStudent(subject, studentForm))
+    .sort((a, b) =>
+      String(a.name || a.subjectName || "").localeCompare(
+        String(b.name || b.subjectName || "")
+      )
+    );
+};
+
+const hasPersistentSubjectId = (subject) => {
+  const subjectId = String(getSubjectId(subject) || "");
+
+  return Boolean(subjectId) && !subjectId.startsWith("local-");
+};
+
+const getTeacherSubjectOptions = (allSubjects, assignment) => {
+  return allSubjects
+    .filter(hasPersistentSubjectId)
+    .filter((subject) => isSubjectAvailableForStudent(subject, assignment))
+    .sort((a, b) =>
+      String(a.name || a.subjectName || "").localeCompare(
+        String(b.name || b.subjectName || "")
+      )
+    );
+};
+
+const normaliseAssignedClassForForm = (item = {}, allSubjects = []) => {
+  const className = String(item.className || item.class || "").trim();
+  const classNumber = Number(className);
+
+  let subjectIds = Array.isArray(item.subjectIds)
+    ? item.subjectIds
+        .map((subject) =>
+          String(
+            typeof subject === "object"
+              ? getSubjectId(subject)
+              : subject || ""
+          )
+        )
+        .filter(Boolean)
+    : [];
+
+  const subjectNamesFromObjects = Array.isArray(item.subjectIds)
+    ? item.subjectIds
+        .filter((subject) => subject && typeof subject === "object")
+        .map((subject) =>
+          String(subject.name || subject.subjectName || "").trim()
+        )
+        .filter(Boolean)
+    : [];
+
+  const subjects = [
+    ...new Set([
+      ...(Array.isArray(item.subjects)
+        ? item.subjects.map((subject) => String(subject || "").trim())
+        : []),
+      ...subjectNamesFromObjects,
+    ].filter(Boolean)),
+  ];
+
+  const assignment = {
+    className,
+    section: String(item.section || "").trim(),
+    stream:
+      classNumber >= 11
+        ? String(item.stream || "").trim()
+        : className
+        ? "General"
+        : "General",
+    subjectIds,
+    subjects,
+  };
+
+  /*
+    Compatibility for older teacher records that stored only
+    subject names. Resolve those names to current Subject IDs
+    so the admin can save the teacher without rebuilding every
+    assignment manually.
+  */
+  if (subjectIds.length === 0 && subjects.length > 0) {
+    const subjectNameSet = new Set(
+      subjects.map((name) => String(name || "").trim().toLowerCase())
+    );
+
+    subjectIds = getTeacherSubjectOptions(allSubjects, assignment)
+      .filter((subject) =>
+        subjectNameSet.has(
+          String(subject.name || subject.subjectName || "")
+            .trim()
+            .toLowerCase()
+        )
+      )
+      .map((subject) => String(getSubjectId(subject)))
+      .filter(Boolean);
+
+    assignment.subjectIds = subjectIds;
+  }
+
+  return assignment;
+};
+
+const getAssignmentSubjectNames = (assignment = {}) => {
+  const directNames = Array.isArray(assignment.subjects)
+    ? assignment.subjects.map((name) => String(name || "").trim()).filter(Boolean)
+    : [];
+
+  const populatedNames = Array.isArray(assignment.subjectIds)
+    ? assignment.subjectIds
+        .filter((subject) => subject && typeof subject === "object")
+        .map((subject) =>
+          String(subject.name || subject.subjectName || "").trim()
+        )
+        .filter(Boolean)
+    : [];
+
+  return [...new Set([...directNames, ...populatedNames])];
+};
+
+const teacherMatchesTimetableSelection = (teacher, selection) => {
+  if (!teacher || !isUserActive(teacher)) return false;
+
+  const selectedClass = String(selection?.className || "").trim();
+  const selectedSection = String(selection?.section || "").trim();
+  const selectedStream = String(selection?.stream || "General").trim();
+  const selectedSubjectId = String(selection?.subjectId || "").trim();
+  const selectedSubjectName = String(selection?.subjectName || "")
+    .trim()
+    .toLowerCase();
+
+  if (!selectedClass || !selectedSection || !selectedSubjectId) {
+    return false;
+  }
+
+  return (teacher.assignedClasses || []).some((assignment) => {
+    const assignmentClass = String(assignment?.className || "").trim();
+    const assignmentSection = String(assignment?.section || "").trim();
+    const assignmentStream = String(assignment?.stream || "General").trim();
+
+    const classMatches = assignmentClass === selectedClass;
+    const sectionMatches =
+      assignmentSection.toLowerCase() === selectedSection.toLowerCase();
+
+    const classNumber = Number(selectedClass);
+    const streamMatches =
+      classNumber <= 10 ||
+      assignmentStream.toLowerCase() === selectedStream.toLowerCase() ||
+      assignmentStream.toLowerCase() === "general";
+
+    const assignmentSubjectIds = Array.isArray(assignment?.subjectIds)
+      ? assignment.subjectIds
+          .map((subject) =>
+            String(
+              typeof subject === "object"
+                ? getSubjectId(subject)
+                : subject || ""
+            )
+          )
+          .filter(Boolean)
+      : [];
+
+    const assignmentSubjectNames = getAssignmentSubjectNames(assignment).map(
+      (name) => String(name || "").trim().toLowerCase()
+    );
+
+    const subjectMatches =
+      assignmentSubjectIds.includes(selectedSubjectId) ||
+      (selectedSubjectName &&
+        assignmentSubjectNames.includes(selectedSubjectName));
+
+    return classMatches && sectionMatches && streamMatches && subjectMatches;
+  });
+};
+
 const extractAddressComponent = (components, type) => {
   const component = components?.find((item) => item.types?.includes(type));
   return component?.long_name || "";
@@ -395,6 +769,18 @@ export default function AdminDashboard() {
   const [subjectSearch, setSubjectSearch] = useState("");
   const [subjectClassFilter, setSubjectClassFilter] = useState("all");
   const [subjectStreamFilter, setSubjectStreamFilter] = useState("all");
+
+  const [timetableEntries, setTimetableEntries] = useState([]);
+  const [timetableForm, setTimetableForm] = useState(emptyTimetableForm);
+  const [editingTimetable, setEditingTimetable] = useState(null);
+  const [selectedTimetableDetails, setSelectedTimetableDetails] = useState(null);
+  const [timetableLoading, setTimetableLoading] = useState(false);
+  const [timetableSaving, setTimetableSaving] = useState(false);
+  const [timetableClassFilter, setTimetableClassFilter] = useState("all");
+  const [timetableSectionFilter, setTimetableSectionFilter] = useState("all");
+  const [timetableStreamFilter, setTimetableStreamFilter] = useState("all");
+  const [timetableDayFilter, setTimetableDayFilter] = useState("all");
+  const [timetableShowInactive, setTimetableShowInactive] = useState(false);
 
   const [schoolProfile, setSchoolProfile] = useState(() => {
     return (
@@ -543,6 +929,30 @@ export default function AdminDashboard() {
     }
   };
 
+  const fetchTimetableEntries = async () => {
+    try {
+      setTimetableLoading(true);
+
+      const res = await getTimetable({
+        includeInactive: true,
+        currentOnly: false,
+      });
+
+      const entries = getArrayFromApiResponse(res)
+        .map(normaliseTimetableEntry);
+
+      setTimetableEntries(sortTimetableEntries(entries));
+    } catch (err) {
+      console.error("LOAD TIMETABLE ERROR:", err);
+      showError(
+        err.response?.data?.message ||
+          "Failed to load timetable entries."
+      );
+    } finally {
+      setTimetableLoading(false);
+    }
+  };
+
   const fetchSchoolProfile = async () => {
     try {
       const savedProfile = safeReadStorage(SCHOOL_PROFILE_STORAGE_KEY, null);
@@ -604,6 +1014,7 @@ export default function AdminDashboard() {
     fetchUsers();
     fetchSubjects();
     fetchSchoolProfile();
+    fetchTimetableEntries();
   }, []);
 
   useEffect(() => {
@@ -769,6 +1180,163 @@ export default function AdminDashboard() {
     });
   }, [subjects, subjectSearch, subjectClassFilter, subjectStreamFilter]);
 
+  const createStudentSubjectOptions = useMemo(
+    () => getStudentSubjectOptions(subjects, form),
+    [subjects, form.className, form.section, form.stream]
+  );
+
+  const editStudentSubjectOptions = useMemo(
+    () => getStudentSubjectOptions(subjects, editForm),
+    [subjects, editForm.className, editForm.section, editForm.stream]
+  );
+
+  const timetableSubjectOptions = useMemo(
+    () => getTeacherSubjectOptions(subjects, timetableForm),
+    [
+      subjects,
+      timetableForm.className,
+      timetableForm.section,
+      timetableForm.stream,
+    ]
+  );
+
+  const selectedTimetableSubject = useMemo(
+    () =>
+      timetableSubjectOptions.find(
+        (subject) =>
+          String(getSubjectId(subject)) ===
+          String(timetableForm.subjectId || "")
+      ) || null,
+    [timetableSubjectOptions, timetableForm.subjectId]
+  );
+
+  const timetableTeacherOptions = useMemo(() => {
+    const isTeachingPeriod = TEACHING_TIMETABLE_TYPES.has(
+      timetableForm.classType
+    );
+
+    if (!isTeachingPeriod) {
+      return teachers
+        .filter(isUserActive)
+        .sort((a, b) =>
+          String(a.name || "").localeCompare(String(b.name || ""))
+        );
+    }
+
+    if (
+      !timetableForm.className ||
+      !timetableForm.section ||
+      !timetableForm.subjectId
+    ) {
+      return [];
+    }
+
+    return teachers
+      .filter((teacher) =>
+        teacherMatchesTimetableSelection(teacher, {
+          ...timetableForm,
+          subjectName:
+            selectedTimetableSubject?.name ||
+            selectedTimetableSubject?.subjectName ||
+            timetableForm.subjectName,
+        })
+      )
+      .sort((a, b) =>
+        String(a.name || "").localeCompare(String(b.name || ""))
+      );
+  }, [
+    teachers,
+    timetableForm.className,
+    timetableForm.section,
+    timetableForm.stream,
+    timetableForm.subjectId,
+    timetableForm.subjectName,
+    timetableForm.classType,
+    selectedTimetableSubject,
+  ]);
+
+  const filteredTimetableEntries = useMemo(() => {
+    return sortTimetableEntries(
+      timetableEntries.filter((entry) => {
+        const matchesClass =
+          timetableClassFilter === "all" ||
+          String(entry.className) === String(timetableClassFilter);
+
+        const matchesSection =
+          timetableSectionFilter === "all" ||
+          String(entry.section).toLowerCase() ===
+            String(timetableSectionFilter).toLowerCase();
+
+        const matchesStream =
+          timetableStreamFilter === "all" ||
+          String(entry.stream || "General").toLowerCase() ===
+            String(timetableStreamFilter).toLowerCase();
+
+        const matchesDay =
+          timetableDayFilter === "all" ||
+          entry.dayOfWeek === timetableDayFilter;
+
+        const matchesStatus =
+          timetableShowInactive || entry.isActive !== false;
+
+        return (
+          matchesClass &&
+          matchesSection &&
+          matchesStream &&
+          matchesDay &&
+          matchesStatus
+        );
+      })
+    );
+  }, [
+    timetableEntries,
+    timetableClassFilter,
+    timetableSectionFilter,
+    timetableStreamFilter,
+    timetableDayFilter,
+    timetableShowInactive,
+  ]);
+
+  const timetableTimeSlots = useMemo(() => {
+    const values = new Set();
+
+    filteredTimetableEntries
+      .filter((entry) => entry.isActive !== false)
+      .forEach((entry) => {
+        if (entry.startTime && entry.endTime) {
+          values.add(`${entry.startTime}__${entry.endTime}`);
+        }
+      });
+
+    return Array.from(values)
+      .map((value) => {
+        const [startTime, endTime] = value.split("__");
+
+        return {
+          key: value,
+          startTime,
+          endTime,
+        };
+      })
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }, [filteredTimetableEntries]);
+
+  const timetableGridMap = useMemo(() => {
+    const map = new Map();
+
+    filteredTimetableEntries
+      .filter((entry) => entry.isActive !== false)
+      .forEach((entry) => {
+        const key = `${entry.dayOfWeek}__${entry.startTime}__${entry.endTime}`;
+        const current = map.get(key) || [];
+
+        current.push(entry);
+        map.set(key, current);
+      });
+
+    return map;
+  }, [filteredTimetableEntries]);
+
   const reportData = useMemo(() => {
     const classMap = new Map();
 
@@ -833,10 +1401,63 @@ export default function AdminDashboard() {
   }, [allUsers, teachers, students, subjects]);
 
   const handleChange = (e) => {
-    setForm({
-      ...form,
-      [e.target.name]: e.target.value,
+    const { name, value } = e.target;
+
+    setForm((previous) => {
+      if (name === "className") {
+        const classNumber = Number(value);
+
+        return {
+          ...previous,
+          className: value,
+          stream:
+            classNumber >= 11
+              ? previous.stream === "General"
+                ? ""
+                : previous.stream
+              : value
+              ? "General"
+              : "",
+          subjectEnrollmentMode: "stream",
+          subjectIds: [],
+        };
+      }
+
+      if (name === "section" || name === "stream") {
+        return {
+          ...previous,
+          [name]: value,
+          subjectEnrollmentMode: "stream",
+          subjectIds: [],
+        };
+      }
+
+      if (name === "subjectEnrollmentMode") {
+        return {
+          ...previous,
+          subjectEnrollmentMode: value,
+          subjectIds: value === "individual" ? previous.subjectIds : [],
+        };
+      }
+
+      return {
+        ...previous,
+        [name]: value,
+      };
     });
+  };
+
+  const handleStudentSubjectToggle = (subjectId) => {
+    const cleanId = String(subjectId || "");
+
+    if (!cleanId) return;
+
+    setForm((previous) => ({
+      ...previous,
+      subjectIds: previous.subjectIds.includes(cleanId)
+        ? previous.subjectIds.filter((id) => id !== cleanId)
+        : [...previous.subjectIds, cleanId],
+    }));
   };
 
   const handleRoleChange = (e) => {
@@ -847,16 +1468,95 @@ export default function AdminDashboard() {
   };
 
   const handleAssignedClassChange = (index, field, value) => {
-    const updatedClasses = [...form.assignedClasses];
+    setForm((previous) => {
+      const updatedClasses = [...previous.assignedClasses];
+      const current = {
+        ...emptyAssignedClass,
+        ...updatedClasses[index],
+      };
 
-    updatedClasses[index] = {
-      ...updatedClasses[index],
-      [field]: value,
-    };
+      if (field === "className") {
+        const classNumber = Number(value);
 
-    setForm({
-      ...form,
-      assignedClasses: updatedClasses,
+        updatedClasses[index] = {
+          ...current,
+          className: value,
+          stream:
+            classNumber >= 11
+              ? current.stream === "General"
+                ? ""
+                : current.stream
+              : value
+              ? "General"
+              : "General",
+          subjectIds: [],
+          subjects: [],
+        };
+      } else if (field === "section" || field === "stream") {
+        updatedClasses[index] = {
+          ...current,
+          [field]: value,
+          subjectIds: [],
+          subjects: [],
+        };
+      } else {
+        updatedClasses[index] = {
+          ...current,
+          [field]: value,
+        };
+      }
+
+      return {
+        ...previous,
+        assignedClasses: updatedClasses,
+      };
+    });
+  };
+
+  const handleTeacherSubjectToggle = (index, subject) => {
+    const subjectId = String(getSubjectId(subject) || "");
+    const subjectName = String(
+      subject?.name || subject?.subjectName || ""
+    ).trim();
+
+    if (!subjectId || subjectId.startsWith("local-")) {
+      showError(
+        "This subject is only stored locally. Save it to the backend before assigning it to a teacher."
+      );
+      return;
+    }
+
+    setForm((previous) => {
+      const updatedClasses = [...previous.assignedClasses];
+      const current = {
+        ...emptyAssignedClass,
+        ...updatedClasses[index],
+      };
+
+      const selectedIds = Array.isArray(current.subjectIds)
+        ? current.subjectIds.map(String)
+        : [];
+
+      const isSelected = selectedIds.includes(subjectId);
+
+      updatedClasses[index] = {
+        ...current,
+        subjectIds: isSelected
+          ? selectedIds.filter((id) => id !== subjectId)
+          : [...selectedIds, subjectId],
+        subjects: isSelected
+          ? (current.subjects || []).filter(
+              (name) =>
+                String(name || "").trim().toLowerCase() !==
+                subjectName.toLowerCase()
+            )
+          : [...new Set([...(current.subjects || []), subjectName].filter(Boolean))],
+      };
+
+      return {
+        ...previous,
+        assignedClasses: updatedClasses,
+      };
     });
   };
 
@@ -893,16 +1593,44 @@ export default function AdminDashboard() {
     };
 
     if (form.role === "student") {
+      const classNumber = Number(form.className);
+
       payload.className = form.className.trim();
       payload.section = form.section.trim();
+      payload.stream =
+        classNumber >= 11 ? form.stream.trim() : "General";
+      payload.academicYear = form.academicYear.trim();
+      payload.subjectEnrollmentMode =
+        form.subjectEnrollmentMode === "individual"
+          ? "individual"
+          : "stream";
+      payload.subjectIds =
+        payload.subjectEnrollmentMode === "individual"
+          ? form.subjectIds
+          : [];
     }
 
     if (form.role === "teacher") {
       payload.assignedClasses = form.assignedClasses
-        .map((item) => ({
-          className: String(item.className || "").trim(),
-          section: String(item.section || "").trim(),
-        }))
+        .map((item) => {
+          const className = String(item.className || "").trim();
+          const classNumber = Number(className);
+
+          return {
+            className,
+            section: String(item.section || "").trim(),
+            stream:
+              classNumber >= 11
+                ? String(item.stream || "").trim()
+                : "General",
+            subjectIds: Array.isArray(item.subjectIds)
+              ? item.subjectIds.map(String).filter(Boolean)
+              : [],
+            subjects: Array.isArray(item.subjects)
+              ? item.subjects.map((name) => String(name || "").trim()).filter(Boolean)
+              : [],
+          };
+        })
         .filter((item) => item.className && item.section);
     }
 
@@ -922,6 +1650,17 @@ export default function AdminDashboard() {
       if (!form.className.trim() || !form.section.trim()) {
         return "Please add class and section for student.";
       }
+
+      if (Number(form.className) >= 11 && !form.stream.trim()) {
+        return "Please select the student's stream for Class 11 or 12.";
+      }
+
+      if (
+        form.subjectEnrollmentMode === "individual" &&
+        form.subjectIds.length === 0
+      ) {
+        return "Select at least one subject for individual subject enrolment.";
+      }
     }
 
     if (form.role === "teacher") {
@@ -929,11 +1668,31 @@ export default function AdminDashboard() {
         .map((item) => ({
           className: String(item.className || "").trim(),
           section: String(item.section || "").trim(),
+          stream: String(item.stream || "").trim(),
+          subjectIds: Array.isArray(item.subjectIds)
+            ? item.subjectIds.filter(Boolean)
+            : [],
         }))
         .filter((item) => item.className && item.section);
 
       if (cleanAssignedClasses.length === 0) {
         return "Please assign at least one class to the teacher.";
+      }
+
+      const incompleteAssignment = cleanAssignedClasses.find(
+        (item) => Number(item.className) >= 11 && !item.stream
+      );
+
+      if (incompleteAssignment) {
+        return `Select a stream for Class ${incompleteAssignment.className}, Section ${incompleteAssignment.section}.`;
+      }
+
+      const assignmentWithoutSubject = cleanAssignedClasses.find(
+        (item) => item.subjectIds.length === 0
+      );
+
+      if (assignmentWithoutSubject) {
+        return `Select at least one teaching subject for Class ${assignmentWithoutSubject.className}, Section ${assignmentWithoutSubject.section}.`;
       }
     }
 
@@ -983,12 +1742,33 @@ export default function AdminDashboard() {
       role: user.role || "student",
       className: user.className || "",
       section: user.section || "",
+      stream:
+        user.stream ||
+        (Number(user.className) > 0 && Number(user.className) <= 10
+          ? "General"
+          : ""),
+      academicYear: user.academicYear || "",
+      subjectEnrollmentMode:
+        user.subjectEnrollmentMode ||
+        (Array.isArray(user.subjectIds) && user.subjectIds.length > 0
+          ? "individual"
+          : "stream"),
+      subjectIds: Array.isArray(user.subjectIds)
+        ? user.subjectIds
+            .map((subject) =>
+              String(
+                typeof subject === "object"
+                  ? getSubjectId(subject)
+                  : subject || ""
+              )
+            )
+            .filter(Boolean)
+        : [],
       assignedClasses:
         Array.isArray(user.assignedClasses) && user.assignedClasses.length > 0
-          ? user.assignedClasses.map((item) => ({
-              className: item.className || "",
-              section: item.section || "",
-            }))
+          ? user.assignedClasses.map((item) =>
+              normaliseAssignedClassForForm(item, subjects)
+            )
           : [{ ...emptyAssignedClass }],
     });
 
@@ -1001,10 +1781,63 @@ export default function AdminDashboard() {
   };
 
   const handleEditChange = (e) => {
-    setEditForm({
-      ...editForm,
-      [e.target.name]: e.target.value,
+    const { name, value } = e.target;
+
+    setEditForm((previous) => {
+      if (name === "className") {
+        const classNumber = Number(value);
+
+        return {
+          ...previous,
+          className: value,
+          stream:
+            classNumber >= 11
+              ? previous.stream === "General"
+                ? ""
+                : previous.stream
+              : value
+              ? "General"
+              : "",
+          subjectEnrollmentMode: "stream",
+          subjectIds: [],
+        };
+      }
+
+      if (name === "section" || name === "stream") {
+        return {
+          ...previous,
+          [name]: value,
+          subjectEnrollmentMode: "stream",
+          subjectIds: [],
+        };
+      }
+
+      if (name === "subjectEnrollmentMode") {
+        return {
+          ...previous,
+          subjectEnrollmentMode: value,
+          subjectIds: value === "individual" ? previous.subjectIds : [],
+        };
+      }
+
+      return {
+        ...previous,
+        [name]: value,
+      };
     });
+  };
+
+  const handleEditStudentSubjectToggle = (subjectId) => {
+    const cleanId = String(subjectId || "");
+
+    if (!cleanId) return;
+
+    setEditForm((previous) => ({
+      ...previous,
+      subjectIds: previous.subjectIds.includes(cleanId)
+        ? previous.subjectIds.filter((id) => id !== cleanId)
+        : [...previous.subjectIds, cleanId],
+    }));
   };
 
   const handleEditRoleChange = (e) => {
@@ -1013,21 +1846,104 @@ export default function AdminDashboard() {
       role: e.target.value,
       className: "",
       section: "",
+      stream: "",
+      academicYear: "",
+      subjectEnrollmentMode: "stream",
+      subjectIds: [],
       assignedClasses: [{ ...emptyAssignedClass }],
     });
   };
 
   const handleEditAssignedClassChange = (index, field, value) => {
-    const updatedClasses = [...editForm.assignedClasses];
+    setEditForm((previous) => {
+      const updatedClasses = [...previous.assignedClasses];
+      const current = {
+        ...emptyAssignedClass,
+        ...updatedClasses[index],
+      };
 
-    updatedClasses[index] = {
-      ...updatedClasses[index],
-      [field]: value,
-    };
+      if (field === "className") {
+        const classNumber = Number(value);
 
-    setEditForm({
-      ...editForm,
-      assignedClasses: updatedClasses,
+        updatedClasses[index] = {
+          ...current,
+          className: value,
+          stream:
+            classNumber >= 11
+              ? current.stream === "General"
+                ? ""
+                : current.stream
+              : value
+              ? "General"
+              : "General",
+          subjectIds: [],
+          subjects: [],
+        };
+      } else if (field === "section" || field === "stream") {
+        updatedClasses[index] = {
+          ...current,
+          [field]: value,
+          subjectIds: [],
+          subjects: [],
+        };
+      } else {
+        updatedClasses[index] = {
+          ...current,
+          [field]: value,
+        };
+      }
+
+      return {
+        ...previous,
+        assignedClasses: updatedClasses,
+      };
+    });
+  };
+
+  const handleEditTeacherSubjectToggle = (index, subject) => {
+    const subjectId = String(getSubjectId(subject) || "");
+    const subjectName = String(
+      subject?.name || subject?.subjectName || ""
+    ).trim();
+
+    if (!subjectId || subjectId.startsWith("local-")) {
+      showError(
+        "This subject is only stored locally. Save it to the backend before assigning it to a teacher."
+      );
+      return;
+    }
+
+    setEditForm((previous) => {
+      const updatedClasses = [...previous.assignedClasses];
+      const current = {
+        ...emptyAssignedClass,
+        ...updatedClasses[index],
+      };
+
+      const selectedIds = Array.isArray(current.subjectIds)
+        ? current.subjectIds.map(String)
+        : [];
+
+      const isSelected = selectedIds.includes(subjectId);
+
+      updatedClasses[index] = {
+        ...current,
+        subjectIds: isSelected
+          ? selectedIds.filter((id) => id !== subjectId)
+          : [...selectedIds, subjectId],
+        subjects: isSelected
+          ? (current.subjects || []).filter(
+              (name) =>
+                String(name || "").trim().toLowerCase() !==
+                subjectName.toLowerCase()
+            )
+          : [...new Set([...(current.subjects || []), subjectName].filter(Boolean))],
+      };
+
+      return {
+        ...previous,
+        assignedClasses: updatedClasses,
+      };
     });
   };
 
@@ -1064,6 +1980,17 @@ export default function AdminDashboard() {
       if (!editForm.className.trim() || !editForm.section.trim()) {
         return "Please add class and section for student.";
       }
+
+      if (Number(editForm.className) >= 11 && !editForm.stream.trim()) {
+        return "Please select the student's stream for Class 11 or 12.";
+      }
+
+      if (
+        editForm.subjectEnrollmentMode === "individual" &&
+        editForm.subjectIds.length === 0
+      ) {
+        return "Select at least one subject for individual subject enrolment.";
+      }
     }
 
     if (editForm.role === "teacher") {
@@ -1071,11 +1998,31 @@ export default function AdminDashboard() {
         .map((item) => ({
           className: String(item.className || "").trim(),
           section: String(item.section || "").trim(),
+          stream: String(item.stream || "").trim(),
+          subjectIds: Array.isArray(item.subjectIds)
+            ? item.subjectIds.filter(Boolean)
+            : [],
         }))
         .filter((item) => item.className && item.section);
 
       if (cleanAssignedClasses.length === 0) {
         return "Please assign at least one class to the teacher.";
+      }
+
+      const incompleteAssignment = cleanAssignedClasses.find(
+        (item) => Number(item.className) >= 11 && !item.stream
+      );
+
+      if (incompleteAssignment) {
+        return `Select a stream for Class ${incompleteAssignment.className}, Section ${incompleteAssignment.section}.`;
+      }
+
+      const assignmentWithoutSubject = cleanAssignedClasses.find(
+        (item) => item.subjectIds.length === 0
+      );
+
+      if (assignmentWithoutSubject) {
+        return `Select at least one teaching subject for Class ${assignmentWithoutSubject.className}, Section ${assignmentWithoutSubject.section}.`;
       }
     }
 
@@ -1091,8 +2038,21 @@ export default function AdminDashboard() {
     };
 
     if (editForm.role === "student") {
+      const classNumber = Number(editForm.className);
+
       payload.className = editForm.className.trim();
       payload.section = editForm.section.trim();
+      payload.stream =
+        classNumber >= 11 ? editForm.stream.trim() : "General";
+      payload.academicYear = editForm.academicYear.trim();
+      payload.subjectEnrollmentMode =
+        editForm.subjectEnrollmentMode === "individual"
+          ? "individual"
+          : "stream";
+      payload.subjectIds =
+        payload.subjectEnrollmentMode === "individual"
+          ? editForm.subjectIds
+          : [];
       payload.assignedClasses = [];
     }
 
@@ -1100,10 +2060,25 @@ export default function AdminDashboard() {
       payload.className = "";
       payload.section = "";
       payload.assignedClasses = editForm.assignedClasses
-        .map((item) => ({
-          className: String(item.className || "").trim(),
-          section: String(item.section || "").trim(),
-        }))
+        .map((item) => {
+          const className = String(item.className || "").trim();
+          const classNumber = Number(className);
+
+          return {
+            className,
+            section: String(item.section || "").trim(),
+            stream:
+              classNumber >= 11
+                ? String(item.stream || "").trim()
+                : "General",
+            subjectIds: Array.isArray(item.subjectIds)
+              ? item.subjectIds.map(String).filter(Boolean)
+              : [],
+            subjects: Array.isArray(item.subjects)
+              ? item.subjects.map((name) => String(name || "").trim()).filter(Boolean)
+              : [],
+          };
+        })
         .filter((item) => item.className && item.section);
     }
 
@@ -1624,6 +2599,344 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleTimetableFormChange = (event) => {
+    const { name, value } = event.target;
+
+    setTimetableForm((previous) => {
+      if (name === "className") {
+        const classNumber = Number(value);
+
+        return {
+          ...previous,
+          className: value,
+          stream:
+            classNumber >= 11
+              ? previous.stream === "General"
+                ? ""
+                : previous.stream
+              : "General",
+          subjectId: "",
+          subjectName: "",
+          subjectCode: "",
+          teacherId: "",
+          teacherName: "",
+        };
+      }
+
+      if (name === "section" || name === "stream") {
+        return {
+          ...previous,
+          [name]: value,
+          subjectId: "",
+          subjectName: "",
+          subjectCode: "",
+          teacherId: "",
+          teacherName: "",
+        };
+      }
+
+      if (name === "subjectId") {
+        const selectedSubject = subjects.find(
+          (subject) =>
+            String(getSubjectId(subject)) === String(value)
+        );
+
+        return {
+          ...previous,
+          subjectId: value,
+          subjectName:
+            selectedSubject?.name ||
+            selectedSubject?.subjectName ||
+            "",
+          subjectCode:
+            selectedSubject?.subjectCode ||
+            selectedSubject?.code ||
+            "",
+          teacherId: "",
+          teacherName: "",
+        };
+      }
+
+      if (name === "teacherId") {
+        const selectedTeacher = teachers.find(
+          (teacher) => String(getId(teacher)) === String(value)
+        );
+
+        return {
+          ...previous,
+          teacherId: value,
+          teacherName: selectedTeacher?.name || "",
+        };
+      }
+
+      if (name === "classType") {
+        const teachingPeriod = TEACHING_TIMETABLE_TYPES.has(value);
+
+        return {
+          ...previous,
+          classType: value,
+          subjectId: teachingPeriod ? previous.subjectId : "",
+          subjectName: teachingPeriod ? previous.subjectName : "",
+          subjectCode: teachingPeriod ? previous.subjectCode : "",
+          teacherId: teachingPeriod ? previous.teacherId : "",
+          teacherName: teachingPeriod ? previous.teacherName : "",
+        };
+      }
+
+      return {
+        ...previous,
+        [name]: value,
+      };
+    });
+  };
+
+  const resetTimetableForm = () => {
+    setTimetableForm(emptyTimetableForm);
+    setEditingTimetable(null);
+  };
+
+  const validateTimetableForm = () => {
+    if (!timetableForm.className || !timetableForm.section) {
+      return "Select the class and section.";
+    }
+
+    if (Number(timetableForm.className) >= 11 && !timetableForm.stream) {
+      return "Select the stream or programme for Class 11 or 12.";
+    }
+
+    if (
+      !timetableForm.dayOfWeek ||
+      !timetableForm.startTime ||
+      !timetableForm.endTime
+    ) {
+      return "Select the day, start time and end time.";
+    }
+
+    if (timetableForm.endTime <= timetableForm.startTime) {
+      return "End time must be later than start time.";
+    }
+
+    if (
+      timetableForm.validFrom &&
+      timetableForm.validUntil &&
+      timetableForm.validUntil < timetableForm.validFrom
+    ) {
+      return "Valid-until date cannot be before valid-from date.";
+    }
+
+    if (TEACHING_TIMETABLE_TYPES.has(timetableForm.classType)) {
+      if (!timetableForm.subjectId) {
+        return "Select the subject for this teaching period.";
+      }
+
+      if (!timetableForm.teacherId) {
+        return "Select the appointed teacher for this subject.";
+      }
+    }
+
+    return "";
+  };
+
+  const buildTimetablePayload = () => {
+    const classNumber = Number(timetableForm.className);
+    const teachingPeriod = TEACHING_TIMETABLE_TYPES.has(
+      timetableForm.classType
+    );
+
+    return {
+      className: String(timetableForm.className || "").trim(),
+      section: String(timetableForm.section || "").trim(),
+      stream:
+        classNumber >= 11
+          ? String(timetableForm.stream || "").trim()
+          : "General",
+      academicYear: String(timetableForm.academicYear || "").trim(),
+      dayOfWeek: timetableForm.dayOfWeek,
+      startTime: timetableForm.startTime,
+      endTime: timetableForm.endTime,
+      periodNumber:
+        timetableForm.periodNumber === ""
+          ? null
+          : Number(timetableForm.periodNumber),
+      subjectId: teachingPeriod ? timetableForm.subjectId : "",
+      subjectName: teachingPeriod ? timetableForm.subjectName : "",
+      subjectCode: teachingPeriod ? timetableForm.subjectCode : "",
+      teacherId: teachingPeriod ? timetableForm.teacherId : "",
+      teacherName: teachingPeriod ? timetableForm.teacherName : "",
+      room: String(timetableForm.room || "").trim(),
+      classType: timetableForm.classType,
+      notes: String(timetableForm.notes || "").trim(),
+      validFrom: timetableForm.validFrom || null,
+      validUntil: timetableForm.validUntil || null,
+      isActive: timetableForm.isActive !== false,
+      schoolId: loggedUser.schoolId || schoolProfile.schoolId || "",
+    };
+  };
+
+  const handleTimetableSubmit = async (event) => {
+    event.preventDefault();
+
+    const validationError = validateTimetableForm();
+
+    if (validationError) {
+      showError(validationError);
+      return;
+    }
+
+    try {
+      setTimetableSaving(true);
+      setError("");
+      setSuccess("");
+
+      const payload = buildTimetablePayload();
+
+      if (editingTimetable) {
+        await updateTimetable(
+          getTimetableId(editingTimetable),
+          payload
+        );
+
+        showSuccess("Timetable period updated successfully.");
+      } else {
+        await createTimetable(payload);
+        showSuccess("Timetable period added successfully.");
+      }
+
+      resetTimetableForm();
+      await fetchTimetableEntries();
+    } catch (err) {
+      console.error("SAVE TIMETABLE ERROR:", err);
+      showError(
+        err.response?.data?.message ||
+          "Failed to save timetable period."
+      );
+    } finally {
+      setTimetableSaving(false);
+    }
+  };
+
+  const startTimetableEdit = (entry) => {
+    const normalised = normaliseTimetableEntry(entry);
+
+    setEditingTimetable(normalised);
+    setSelectedTimetableDetails(null);
+
+    setTimetableForm({
+      className: normalised.className,
+      section: normalised.section,
+      stream:
+        Number(normalised.className) >= 11
+          ? normalised.stream || "General"
+          : "General",
+      academicYear: normalised.academicYear,
+      dayOfWeek: normalised.dayOfWeek || "Sunday",
+      startTime: normalised.startTime,
+      endTime: normalised.endTime,
+      periodNumber: normalised.periodNumber,
+      subjectId: String(normalised.subjectId || ""),
+      subjectName: normalised.subjectName,
+      subjectCode: normalised.subjectCode,
+      teacherId: String(normalised.teacherId || ""),
+      teacherName: normalised.teacherName,
+      room: normalised.room,
+      classType: normalised.classType || "Regular Class",
+      notes: normalised.notes,
+      validFrom: toDateInputValue(normalised.validFrom),
+      validUntil: toDateInputValue(normalised.validUntil),
+      isActive: normalised.isActive !== false,
+    });
+
+    navigate("/admin/timetable");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleTimetableDeactivate = async (entry) => {
+    const timetableId = getTimetableId(entry);
+
+    if (!timetableId) return;
+
+    if (
+      !window.confirm(
+        `Deactivate ${entry.subjectName || entry.classType} on ${
+          entry.dayOfWeek
+        } from ${entry.startTime} to ${entry.endTime}?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setError("");
+      setSuccess("");
+
+      await deleteTimetable(timetableId);
+      showSuccess("Timetable period deactivated.");
+      await fetchTimetableEntries();
+    } catch (err) {
+      console.error("DEACTIVATE TIMETABLE ERROR:", err);
+      showError(
+        err.response?.data?.message ||
+          "Failed to deactivate timetable period."
+      );
+    }
+  };
+
+  const handleTimetableActivate = async (entry) => {
+    try {
+      setError("");
+      setSuccess("");
+
+      await updateTimetable(getTimetableId(entry), {
+        ...normaliseTimetableEntry(entry),
+        validFrom: toDateInputValue(entry.validFrom) || null,
+        validUntil: toDateInputValue(entry.validUntil) || null,
+        isActive: true,
+      });
+
+      showSuccess("Timetable period activated.");
+      await fetchTimetableEntries();
+    } catch (err) {
+      console.error("ACTIVATE TIMETABLE ERROR:", err);
+      showError(
+        err.response?.data?.message ||
+          "Failed to activate timetable period."
+      );
+    }
+  };
+
+  const handleTimetablePermanentDelete = async (entry) => {
+    const timetableId = getTimetableId(entry);
+
+    if (!timetableId) return;
+
+    if (
+      !window.confirm(
+        "Permanently delete this timetable record? This cannot be undone."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setError("");
+      setSuccess("");
+
+      await deleteTimetable(timetableId, {
+        permanent: true,
+      });
+
+      showSuccess("Timetable period permanently deleted.");
+      setSelectedTimetableDetails(null);
+      await fetchTimetableEntries();
+    } catch (err) {
+      console.error("DELETE TIMETABLE ERROR:", err);
+      showError(
+        err.response?.data?.message ||
+          "Failed to delete timetable period."
+      );
+    }
+  };
+
   const downloadReportsCsv = () => {
     const escapeCsv = (value) => {
       const text = String(value ?? "");
@@ -1748,6 +3061,262 @@ export default function AdminDashboard() {
           >
             Delete
           </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderTeacherAssignmentEditor = (item, index, isEdit = false) => {
+    const assignment = {
+      ...emptyAssignedClass,
+      ...item,
+      subjectIds: Array.isArray(item?.subjectIds)
+        ? item.subjectIds.map(String)
+        : [],
+      subjects: Array.isArray(item?.subjects) ? item.subjects : [],
+    };
+
+    const classNumber = Number(assignment.className);
+    const availableSubjects = getTeacherSubjectOptions(subjects, assignment);
+    const selectedIds = assignment.subjectIds;
+
+    const handleFieldChange = isEdit
+      ? handleEditAssignedClassChange
+      : handleAssignedClassChange;
+
+    const handleSubjectToggle = isEdit
+      ? handleEditTeacherSubjectToggle
+      : handleTeacherSubjectToggle;
+
+    const handleRemove = isEdit
+      ? removeEditTeacherClass
+      : removeTeacherClass;
+
+    return (
+      <div
+        key={`${isEdit ? "edit" : "create"}-teacher-assignment-${index}`}
+        style={{
+          marginBottom: 18,
+          padding: 18,
+          border: "1px solid #dbe7f5",
+          borderRadius: 18,
+          background: "#f8fbff",
+        }}
+      >
+        <div
+          className="admin-section-title-row"
+          style={{ marginBottom: 14, alignItems: "center" }}
+        >
+          <div>
+            <h4 style={{ margin: 0 }}>
+              Teaching Assignment {index + 1}
+            </h4>
+            <p className="dashboard-muted" style={{ margin: "5px 0 0" }}>
+              
+              
+            </p>
+          </div>
+
+          <button
+            className="small-btn remove-btn"
+            type="button"
+            onClick={() => handleRemove(index)}
+          >
+            Remove Assignment
+          </button>
+        </div>
+
+        <div className="form-grid">
+          <div className="auth-form-group">
+            <label>Class</label>
+            <select
+              className="auth-select"
+              value={assignment.className}
+              onChange={(event) =>
+                handleFieldChange(index, "className", event.target.value)
+              }
+              required
+            >
+              <option value="">Select class</option>
+              {NEPAL_CLASSES.map((className) => (
+                <option key={className} value={className}>
+                  Class {className}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="auth-form-group">
+            <label>Section</label>
+            <select
+              className="auth-select"
+              value={assignment.section}
+              onChange={(event) =>
+                handleFieldChange(index, "section", event.target.value)
+              }
+              required
+            >
+              <option value="">Select section</option>
+              {SECTION_OPTIONS.map((section) => (
+                <option key={section} value={section}>
+                  Section {section}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="auth-form-group">
+            <label>Stream / Programme</label>
+            <select
+              className="auth-select"
+              value={
+                classNumber > 0 && classNumber <= 10
+                  ? "General"
+                  : assignment.stream
+              }
+              onChange={(event) =>
+                handleFieldChange(index, "stream", event.target.value)
+              }
+              disabled={!assignment.className || (classNumber > 0 && classNumber <= 10)}
+              required={classNumber >= 11}
+            >
+              {classNumber >= 11 ? (
+                <>
+                  <option value="">Select stream</option>
+                  {STREAM_OPTIONS.map((stream) => (
+                    <option key={stream} value={stream}>
+                      {stream}
+                    </option>
+                  ))}
+                </>
+              ) : (
+                <option value="General">General</option>
+              )}
+            </select>
+          </div>
+        </div>
+
+        {!assignment.className || !assignment.section ? (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 14,
+              borderRadius: 14,
+              background: "#ffffff",
+              border: "1px dashed #cbd5e1",
+            }}
+          >
+            <p className="dashboard-muted" style={{ margin: 0 }}>
+              Select the class and section first. The matching school subjects
+              will then appear here.
+            </p>
+          </div>
+        ) : classNumber >= 11 && !assignment.stream ? (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 14,
+              borderRadius: 14,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+            }}
+          >
+            <p className="dashboard-muted" style={{ margin: 0 }}>
+              Select the Class {assignment.className} stream before choosing a
+              teaching subject.
+            </p>
+          </div>
+        ) : availableSubjects.length === 0 ? (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 14,
+              borderRadius: 14,
+              background: "#fff7ed",
+              border: "1px solid #fed7aa",
+            }}
+          >
+            <strong>No matching subjects configured</strong>
+            <p className="dashboard-muted" style={{ margin: "6px 0 0" }}>
+              Add active subjects for Class {assignment.className}, Section{" "}
+              {assignment.section}
+              {classNumber >= 11
+                ? `, ${assignment.stream} stream`
+                : ""}{" "}
+              from Subject Management first.
+            </p>
+          </div>
+        ) : (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 16,
+              borderRadius: 16,
+              background: "#ffffff",
+              border: "1px solid #dbe7f5",
+            }}
+          >
+            <div
+              className="admin-section-title-row"
+              style={{ marginBottom: 12, alignItems: "center" }}
+            >
+              <div>
+                <h4 style={{ margin: 0 }}>Teaching Subjects</h4>
+                <p className="dashboard-muted" style={{ margin: "5px 0 0" }}>
+                  Selected: {selectedIds.length}. The teacher will only see
+                  these subjects for this class and section.
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 10,
+              }}
+            >
+              {availableSubjects.map((subject) => {
+                const subjectId = String(getSubjectId(subject));
+                const selected = selectedIds.includes(subjectId);
+
+                return (
+                  <label
+                    key={`${index}-${subjectId}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
+                      padding: 12,
+                      border: selected
+                        ? "1px solid #2563eb"
+                        : "1px solid #dbe7f5",
+                      borderRadius: 13,
+                      background: selected ? "#eff6ff" : "#ffffff",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => handleSubjectToggle(index, subject)}
+                    />
+
+                    <span>
+                      <strong style={{ display: "block" }}>
+                        {subject.name || subject.subjectName}
+                      </strong>
+                      <small className="dashboard-muted">
+                        {subject.subjectCode || subject.code || "No code"} ·{" "}
+                        {subject.type || "Subject"} ·{" "}
+                        {subject.stream || "General"}
+                      </small>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
     );
@@ -2069,7 +3638,8 @@ export default function AdminDashboard() {
           <div>
             <h2 className="card-title">Subject Management</h2>
             <p className="dashboard-muted">
-              Add school subjects according to Nepal classes, streams and sections.
+              Add, edit and manage subjects for classes 1 to 12 based on Nepal
+              education structure.
             </p>
           </div>
         </div>
@@ -2287,6 +3857,840 @@ export default function AdminDashboard() {
 
       <section
         className="dashboard-card admin-section-card"
+        hidden={activeView !== "timetable"}
+      >
+        <div className="admin-section-title-row">
+          <div>
+            <h2 className="card-title">Weekly Timetable Management</h2>
+            <p className="dashboard-muted">
+              Add, edit and manage weekly teaching periods for classes and sections.
+
+            </p>
+          </div>
+
+          <button
+            className="small-btn add-btn"
+            type="button"
+            onClick={fetchTimetableEntries}
+            disabled={timetableLoading}
+          >
+            {timetableLoading ? "Refreshing..." : "Refresh Timetable"}
+          </button>
+        </div>
+
+        <form onSubmit={handleTimetableSubmit}>
+          <div className="admin-inner-box">
+            <div className="admin-section-title-row">
+              <div>
+                <h3 style={{ margin: 0 }}>
+                  {editingTimetable
+                    ? "Edit Timetable Period"
+                    : "Add Timetable Period"}
+                </h3>
+                <p className="dashboard-muted" style={{ margin: "6px 0 0" }}>
+                  
+
+                </p>
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="auth-form-group">
+                <label>Class</label>
+                <select
+                  className="auth-select"
+                  name="className"
+                  value={timetableForm.className}
+                  onChange={handleTimetableFormChange}
+                  required
+                >
+                  <option value="">Select class</option>
+                  {NEPAL_CLASSES.map((className) => (
+                    <option key={className} value={className}>
+                      Class {className}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="auth-form-group">
+                <label>Section</label>
+                <select
+                  className="auth-select"
+                  name="section"
+                  value={timetableForm.section}
+                  onChange={handleTimetableFormChange}
+                  required
+                >
+                  <option value="">Select section</option>
+                  {SECTION_OPTIONS.map((section) => (
+                    <option key={section} value={section}>
+                      Section {section}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="auth-form-group">
+                <label>Stream / Programme</label>
+                <select
+                  className="auth-select"
+                  name="stream"
+                  value={
+                    Number(timetableForm.className) > 0 &&
+                    Number(timetableForm.className) <= 10
+                      ? "General"
+                      : timetableForm.stream
+                  }
+                  onChange={handleTimetableFormChange}
+                  disabled={
+                    !timetableForm.className ||
+                    (Number(timetableForm.className) > 0 &&
+                      Number(timetableForm.className) <= 10)
+                  }
+                  required={Number(timetableForm.className) >= 11}
+                >
+                  {Number(timetableForm.className) >= 11 ? (
+                    <>
+                      <option value="">Select stream</option>
+                      {STREAM_OPTIONS.map((stream) => (
+                        <option key={stream} value={stream}>
+                          {stream}
+                        </option>
+                      ))}
+                    </>
+                  ) : (
+                    <option value="General">General</option>
+                  )}
+                </select>
+              </div>
+
+              <div className="auth-form-group">
+                <label>Academic Year</label>
+                <input
+                  className="auth-input"
+                  name="academicYear"
+                  placeholder="Example: 2082/83"
+                  value={timetableForm.academicYear}
+                  onChange={handleTimetableFormChange}
+                />
+              </div>
+
+              <div className="auth-form-group">
+                <label>Period Type</label>
+                <select
+                  className="auth-select"
+                  name="classType"
+                  value={timetableForm.classType}
+                  onChange={handleTimetableFormChange}
+                >
+                  {TIMETABLE_CLASS_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="auth-form-group">
+                <label>Day</label>
+                <select
+                  className="auth-select"
+                  name="dayOfWeek"
+                  value={timetableForm.dayOfWeek}
+                  onChange={handleTimetableFormChange}
+                  required
+                >
+                  {TIMETABLE_DAYS.map((day) => (
+                    <option key={day} value={day}>
+                      {day}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="auth-form-group">
+                <label>Start Time</label>
+                <input
+                  className="auth-input"
+                  type="time"
+                  name="startTime"
+                  value={timetableForm.startTime}
+                  onChange={handleTimetableFormChange}
+                  required
+                />
+              </div>
+
+              <div className="auth-form-group">
+                <label>End Time</label>
+                <input
+                  className="auth-input"
+                  type="time"
+                  name="endTime"
+                  value={timetableForm.endTime}
+                  onChange={handleTimetableFormChange}
+                  required
+                />
+              </div>
+
+              <div className="auth-form-group">
+                <label>Period Number</label>
+                <input
+                  className="auth-input"
+                  type="number"
+                  min="1"
+                  name="periodNumber"
+                  placeholder="Example: 1"
+                  value={timetableForm.periodNumber}
+                  onChange={handleTimetableFormChange}
+                />
+              </div>
+
+              <div className="auth-form-group">
+                <label>Room / Location</label>
+                <input
+                  className="auth-input"
+                  name="room"
+                  placeholder="Example: Room 11 or Science Lab"
+                  value={timetableForm.room}
+                  onChange={handleTimetableFormChange}
+                />
+              </div>
+
+              <div className="auth-form-group">
+                <label>Valid From</label>
+                <input
+                  className="auth-input"
+                  type="date"
+                  name="validFrom"
+                  value={timetableForm.validFrom}
+                  onChange={handleTimetableFormChange}
+                />
+              </div>
+
+              <div className="auth-form-group">
+                <label>Valid Until</label>
+                <input
+                  className="auth-input"
+                  type="date"
+                  name="validUntil"
+                  value={timetableForm.validUntil}
+                  onChange={handleTimetableFormChange}
+                />
+              </div>
+            </div>
+
+            {TEACHING_TIMETABLE_TYPES.has(timetableForm.classType) ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 16,
+                  border: "1px solid #dbe7f5",
+                  borderRadius: 16,
+                  background: "#ffffff",
+                }}
+              >
+                <div className="form-grid">
+                  <div className="auth-form-group">
+                    <label>Subject</label>
+                    <select
+                      className="auth-select"
+                      name="subjectId"
+                      value={timetableForm.subjectId}
+                      onChange={handleTimetableFormChange}
+                      disabled={
+                        !timetableForm.className ||
+                        !timetableForm.section ||
+                        (Number(timetableForm.className) >= 11 &&
+                          !timetableForm.stream)
+                      }
+                      required
+                    >
+                      <option value="">Select subject</option>
+                      {timetableSubjectOptions.map((subject) => (
+                        <option
+                          key={getSubjectId(subject)}
+                          value={getSubjectId(subject)}
+                        >
+                          {subject.name || subject.subjectName}
+                          {subject.subjectCode || subject.code
+                            ? ` (${subject.subjectCode || subject.code})`
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+
+                    {timetableForm.className &&
+                      timetableForm.section &&
+                      (Number(timetableForm.className) < 11 ||
+                        timetableForm.stream) &&
+                      timetableSubjectOptions.length === 0 && (
+                        <small
+                          style={{
+                            display: "block",
+                            marginTop: 7,
+                            color: "#b45309",
+                          }}
+                        >
+                          No active subjects match this class, section and
+                          stream. Configure them under Subject Management.
+                        </small>
+                      )}
+                  </div>
+
+                  <div className="auth-form-group">
+                    <label>Appointed Teacher</label>
+                    <select
+                      className="auth-select"
+                      name="teacherId"
+                      value={timetableForm.teacherId}
+                      onChange={handleTimetableFormChange}
+                      disabled={!timetableForm.subjectId}
+                      required
+                    >
+                      <option value="">Select teacher</option>
+                      {timetableTeacherOptions.map((teacher) => (
+                        <option key={getId(teacher)} value={getId(teacher)}>
+                          {teacher.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    {timetableForm.subjectId &&
+                      timetableTeacherOptions.length === 0 && (
+                        <small
+                          style={{
+                            display: "block",
+                            marginTop: 7,
+                            color: "#b45309",
+                          }}
+                        >
+                          No active teacher is appointed to this subject for
+                          the selected class and section. Edit the teacher
+                          appointment first.
+                        </small>
+                      )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 14,
+                  borderRadius: 14,
+                  background: "#f8fbff",
+                  border: "1px solid #dbe7f5",
+                }}
+              >
+                <p className="dashboard-muted" style={{ margin: 0 }}>
+                  {timetableForm.classType} does not require a subject or
+                  teacher. It will appear in the weekly schedule as a
+                  non-teaching period.
+                </p>
+              </div>
+            )}
+
+            <div className="auth-form-group" style={{ marginTop: 16 }}>
+              <label>Notes</label>
+              <textarea
+                className="auth-input"
+                name="notes"
+                rows="3"
+                placeholder="Optional details such as lab instructions, assembly point or temporary changes"
+                value={timetableForm.notes}
+                onChange={handleTimetableFormChange}
+                style={{ resize: "vertical" }}
+              />
+            </div>
+
+            <div className="admin-row-actions">
+              <button
+                className="primary-btn"
+                type="submit"
+                disabled={timetableSaving}
+              >
+                {timetableSaving
+                  ? "Saving..."
+                  : editingTimetable
+                  ? "Update Period"
+                  : "Add Period"}
+              </button>
+
+              {editingTimetable && (
+                <button
+                  className="logout-btn"
+                  type="button"
+                  onClick={resetTimetableForm}
+                >
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+          </div>
+        </form>
+
+        <hr className="admin-divider" />
+
+        <div className="admin-section-title-row">
+          <div>
+            <h3 style={{ margin: 0 }}>Weekly Timetable</h3>
+            <p className="dashboard-muted" style={{ margin: "6px 0 0" }}>
+              
+
+            </p>
+          </div>
+
+          <span className="badge badge-info">
+            {filteredTimetableEntries.length} record
+            {filteredTimetableEntries.length === 1 ? "" : "s"}
+          </span>
+        </div>
+
+        <div className="form-grid" style={{ marginTop: 16 }}>
+          <select
+            className="auth-select"
+            value={timetableClassFilter}
+            onChange={(event) => {
+              setTimetableClassFilter(event.target.value);
+              setTimetableSectionFilter("all");
+              setTimetableStreamFilter("all");
+            }}
+          >
+            <option value="all">All classes</option>
+            {NEPAL_CLASSES.map((className) => (
+              <option key={className} value={className}>
+                Class {className}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="auth-select"
+            value={timetableSectionFilter}
+            onChange={(event) => setTimetableSectionFilter(event.target.value)}
+          >
+            <option value="all">All sections</option>
+            {SECTION_OPTIONS.map((section) => (
+              <option key={section} value={section}>
+                Section {section}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="auth-select"
+            value={timetableStreamFilter}
+            onChange={(event) => setTimetableStreamFilter(event.target.value)}
+          >
+            <option value="all">All streams</option>
+            {STREAM_OPTIONS.map((stream) => (
+              <option key={stream} value={stream}>
+                {stream}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="auth-select"
+            value={timetableDayFilter}
+            onChange={(event) => setTimetableDayFilter(event.target.value)}
+          >
+            <option value="all">Full week</option>
+            {TIMETABLE_DAYS.map((day) => (
+              <option key={day} value={day}>
+                {day}
+              </option>
+            ))}
+          </select>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              minHeight: 44,
+              padding: "0 12px",
+              border: "1px solid #dbe7f5",
+              borderRadius: 12,
+              background: "#ffffff",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={timetableShowInactive}
+              onChange={(event) =>
+                setTimetableShowInactive(event.target.checked)
+              }
+            />
+            Show inactive records
+          </label>
+        </div>
+
+        {timetableLoading ? (
+          <p style={{ marginTop: 18 }}>Loading timetable...</p>
+        ) : timetableTimeSlots.length === 0 ? (
+          <div
+            style={{
+              marginTop: 18,
+              padding: 18,
+              borderRadius: 16,
+              border: "1px dashed #cbd5e1",
+              background: "#f8fbff",
+            }}
+          >
+            <strong>No active timetable periods found</strong>
+            <p className="dashboard-muted" style={{ margin: "6px 0 0" }}>
+              Add the first period above or change the timetable filters.
+            </p>
+          </div>
+        ) : (
+          <div
+            className="table-wrap"
+            style={{
+              marginTop: 18,
+              overflowX: "auto",
+            }}
+          >
+            <table
+              className="dashboard-table"
+              style={{
+                minWidth: 1100,
+                tableLayout: "fixed",
+              }}
+            >
+              <thead>
+                <tr>
+                  <th style={{ width: 130 }}>Time</th>
+                  {TIMETABLE_DAYS.filter(
+                    (day) =>
+                      timetableDayFilter === "all" ||
+                      timetableDayFilter === day
+                  ).map((day) => (
+                    <th key={day}>{day}</th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {timetableTimeSlots.map((slot) => (
+                  <tr key={slot.key}>
+                    <td>
+                      <strong>{slot.startTime}</strong>
+                      <br />
+                      <span className="dashboard-muted">to {slot.endTime}</span>
+                    </td>
+
+                    {TIMETABLE_DAYS.filter(
+                      (day) =>
+                        timetableDayFilter === "all" ||
+                        timetableDayFilter === day
+                    ).map((day) => {
+                      const cellEntries =
+                        timetableGridMap.get(
+                          `${day}__${slot.startTime}__${slot.endTime}`
+                        ) || [];
+
+                      return (
+                        <td key={`${slot.key}-${day}`} style={{ verticalAlign: "top" }}>
+                          {cellEntries.length === 0 ? (
+                            <span className="dashboard-muted">—</span>
+                          ) : (
+                            <div style={{ display: "grid", gap: 8 }}>
+                              {cellEntries.map((entry) => (
+                                <button
+                                  key={getTimetableId(entry)}
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedTimetableDetails(entry)
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    textAlign: "left",
+                                    padding: 10,
+                                    borderRadius: 12,
+                                    border: "1px solid #bfdbfe",
+                                    background: "#eff6ff",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <strong style={{ display: "block" }}>
+                                    {entry.subjectName || entry.classType}
+                                  </strong>
+                                  <small style={{ display: "block", marginTop: 3 }}>
+                                    Class {entry.className}-{entry.section}
+                                    {Number(entry.className) >= 11
+                                      ? ` · ${entry.stream}`
+                                      : ""}
+                                  </small>
+                                  <small className="dashboard-muted">
+                                    {entry.teacherName ||
+                                      (TEACHING_TIMETABLE_TYPES.has(entry.classType)
+                                        ? "Teacher not set"
+                                        : entry.classType)}
+                                    {entry.room ? ` · ${entry.room}` : ""}
+                                  </small>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <hr className="admin-divider" />
+
+        <h3>Timetable Records</h3>
+
+        {filteredTimetableEntries.length === 0 ? (
+          <p>No timetable records match the selected filters.</p>
+        ) : (
+          <div className="admin-list-grid">
+            {filteredTimetableEntries.map((entry) => (
+              <article
+                className="admin-user-card"
+                key={getTimetableId(entry)}
+                style={{
+                  opacity: entry.isActive === false ? 0.68 : 1,
+                }}
+              >
+                <div className="admin-user-card-top">
+                  <h3>{entry.subjectName || entry.classType}</h3>
+                  <span
+                    className={
+                      entry.isActive === false
+                        ? "badge badge-danger"
+                        : "badge badge-success"
+                    }
+                  >
+                    {entry.isActive === false ? "Inactive" : "Active"}
+                  </span>
+                </div>
+
+                <p>
+                  <b>{entry.dayOfWeek}</b> · {entry.startTime}–{entry.endTime}
+                </p>
+
+                <p>
+                  Class {entry.className}, Section {entry.section}
+                  {Number(entry.className) >= 11
+                    ? ` · ${entry.stream}`
+                    : ""}
+                </p>
+
+                <p>
+                  <b>Teacher:</b> {entry.teacherName || "Not required"}
+                </p>
+
+                <p>
+                  <b>Room:</b> {entry.room || "Not assigned"}
+                </p>
+
+                <div className="admin-row-actions">
+                  <button
+                    className="small-btn add-btn"
+                    type="button"
+                    onClick={() => setSelectedTimetableDetails(entry)}
+                  >
+                    View Details
+                  </button>
+
+                  <button
+                    className="small-btn add-btn"
+                    type="button"
+                    onClick={() => startTimetableEdit(entry)}
+                  >
+                    Edit
+                  </button>
+
+                  {entry.isActive === false ? (
+                    <>
+                      <button
+                        className="small-btn add-btn"
+                        type="button"
+                        onClick={() => handleTimetableActivate(entry)}
+                      >
+                        Activate
+                      </button>
+
+                      <button
+                        className="small-btn remove-btn"
+                        type="button"
+                        onClick={() => handleTimetablePermanentDelete(entry)}
+                      >
+                        Delete Permanently
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="small-btn remove-btn"
+                      type="button"
+                      onClick={() => handleTimetableDeactivate(entry)}
+                    >
+                      Deactivate
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+
+        {selectedTimetableDetails && (
+          <div
+            role="presentation"
+            onClick={() => setSelectedTimetableDetails(null)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+              background: "rgba(15, 23, 42, 0.58)",
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Timetable details"
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: "min(620px, 100%)",
+                maxHeight: "88vh",
+                overflowY: "auto",
+                padding: 24,
+                borderRadius: 20,
+                background: "#ffffff",
+                boxShadow: "0 24px 70px rgba(15, 23, 42, 0.25)",
+              }}
+            >
+              <div className="admin-section-title-row">
+                <div>
+                  <span className="admin-top-badge">
+                    {selectedTimetableDetails.classType}
+                  </span>
+                  <h2 style={{ margin: "10px 0 0" }}>
+                    {selectedTimetableDetails.subjectName ||
+                      selectedTimetableDetails.classType}
+                  </h2>
+                </div>
+
+                <button
+                  className="logout-btn"
+                  type="button"
+                  onClick={() => setSelectedTimetableDetails(null)}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 18,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                <div className="admin-inner-box">
+                  <b>Class</b>
+                  <p style={{ marginBottom: 0 }}>
+                    Class {selectedTimetableDetails.className}, Section{" "}
+                    {selectedTimetableDetails.section}
+                  </p>
+                </div>
+
+                <div className="admin-inner-box">
+                  <b>Stream</b>
+                  <p style={{ marginBottom: 0 }}>
+                    {selectedTimetableDetails.stream || "General"}
+                  </p>
+                </div>
+
+                <div className="admin-inner-box">
+                  <b>Day and Time</b>
+                  <p style={{ marginBottom: 0 }}>
+                    {selectedTimetableDetails.dayOfWeek},{" "}
+                    {selectedTimetableDetails.startTime}–
+                    {selectedTimetableDetails.endTime}
+                  </p>
+                </div>
+
+                <div className="admin-inner-box">
+                  <b>Teacher</b>
+                  <p style={{ marginBottom: 0 }}>
+                    {selectedTimetableDetails.teacherName || "Not required"}
+                  </p>
+                </div>
+
+                <div className="admin-inner-box">
+                  <b>Room</b>
+                  <p style={{ marginBottom: 0 }}>
+                    {selectedTimetableDetails.room || "Not assigned"}
+                  </p>
+                </div>
+
+                <div className="admin-inner-box">
+                  <b>Academic Year</b>
+                  <p style={{ marginBottom: 0 }}>
+                    {selectedTimetableDetails.academicYear || "Not specified"}
+                  </p>
+                </div>
+              </div>
+
+              {(selectedTimetableDetails.validFrom ||
+                selectedTimetableDetails.validUntil) && (
+                <div className="admin-inner-box" style={{ marginTop: 14 }}>
+                  <b>Schedule Validity</b>
+                  <p style={{ marginBottom: 0 }}>
+                    {selectedTimetableDetails.validFrom
+                      ? new Date(
+                          selectedTimetableDetails.validFrom
+                        ).toLocaleDateString()
+                      : "No start limit"}{" "}
+                    –{" "}
+                    {selectedTimetableDetails.validUntil
+                      ? new Date(
+                          selectedTimetableDetails.validUntil
+                        ).toLocaleDateString()
+                      : "No end limit"}
+                  </p>
+                </div>
+              )}
+
+              {selectedTimetableDetails.notes && (
+                <div className="admin-inner-box" style={{ marginTop: 14 }}>
+                  <b>Notes</b>
+                  <p style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
+                    {selectedTimetableDetails.notes}
+                  </p>
+                </div>
+              )}
+
+              <div className="admin-row-actions" style={{ marginTop: 18 }}>
+                <button
+                  className="primary-btn"
+                  type="button"
+                  onClick={() => startTimetableEdit(selectedTimetableDetails)}
+                >
+                  Edit Period
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section
+        className="dashboard-card admin-section-card"
         hidden={activeView !== "reports"}
       >
         <div className="admin-section-title-row">
@@ -2408,7 +4812,11 @@ export default function AdminDashboard() {
 
             {editForm.role === "student" && (
               <div className="admin-inner-box">
-                <h3>Student Class</h3>
+                <h3>Student Academic Placement</h3>
+                <p className="dashboard-muted">
+                  Correct the stream here so the student only receives subjects
+                  belonging to that programme.
+                </p>
 
                 <div className="form-grid">
                   <div className="auth-form-group">
@@ -2446,81 +4854,193 @@ export default function AdminDashboard() {
                       ))}
                     </select>
                   </div>
+
+                  <div className="auth-form-group">
+                    <label>Stream / Programme</label>
+                    <select
+                      className="auth-select"
+                      name="stream"
+                      value={
+                        Number(editForm.className) > 0 && Number(editForm.className) <= 10
+                          ? "General"
+                          : editForm.stream
+                      }
+                      onChange={handleEditChange}
+                      disabled={
+                        !editForm.className ||
+                        (Number(editForm.className) > 0 && Number(editForm.className) <= 10)
+                      }
+                      required={Number(editForm.className) >= 11}
+                    >
+                      {Number(editForm.className) >= 11 ? (
+                        <>
+                          <option value="">Select stream</option>
+                          {STREAM_OPTIONS.map(
+                            (stream) => (
+                              <option key={stream} value={stream}>
+                                {stream}
+                              </option>
+                            )
+                          )}
+                        </>
+                      ) : (
+                        <option value="General">General</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="auth-form-group">
+                    <label>Academic Year</label>
+                    <input
+                      className="auth-input"
+                      name="academicYear"
+                      placeholder="Example: 2082/83"
+                      value={editForm.academicYear}
+                      onChange={handleEditChange}
+                    />
+                  </div>
+
+                  <div className="auth-form-group">
+                    <label>Subject Assignment</label>
+                    <select
+                      className="auth-select"
+                      name="subjectEnrollmentMode"
+                      value={editForm.subjectEnrollmentMode}
+                      onChange={handleEditChange}
+                    >
+                      <option value="stream">Use all subjects in the selected stream</option>
+                      <option value="individual">Choose exact subjects for this student</option>
+                    </select>
+                  </div>
                 </div>
+
+                {editForm.className && editForm.section && (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      padding: 16,
+                      border: "1px solid #dbe7f5",
+                      borderRadius: 16,
+                      background: "#f8fbff",
+                    }}
+                  >
+                    {editForm.subjectEnrollmentMode === "stream" ? (
+                      <p className="dashboard-muted" style={{ margin: 0 }}>
+                        This student will see {editStudentSubjectOptions.length} active subject
+                        {editStudentSubjectOptions.length === 1 ? "" : "s"} for {editForm.stream || "General"}.
+                        Subjects from other streams will be excluded.
+                      </p>
+                    ) : editStudentSubjectOptions.length === 0 ? (
+                      <p className="dashboard-muted" style={{ margin: 0 }}>
+                        No matching subjects are configured for this class, section and stream.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="admin-section-title-row" style={{ marginBottom: 12 }}>
+                          <div>
+                            <h4 style={{ margin: 0 }}>Choose Student Subjects</h4>
+                            <p className="dashboard-muted" style={{ margin: "5px 0 0" }}>
+                              Selected: {editForm.subjectIds.length} of {editStudentSubjectOptions.length}
+                            </p>
+                          </div>
+                          <div className="admin-row-actions">
+                            <button
+                              type="button"
+                              className="small-btn add-btn"
+                              onClick={() =>
+                                setEditForm((previous) => ({
+                                  ...previous,
+                                  subjectIds: editStudentSubjectOptions
+                                    .map((subject) => String(getSubjectId(subject)))
+                                    .filter(Boolean),
+                                }))
+                              }
+                            >
+                              Select All
+                            </button>
+                            <button
+                              type="button"
+                              className="small-btn remove-btn"
+                              onClick={() =>
+                                setEditForm((previous) => ({ ...previous, subjectIds: [] }))
+                              }
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                            gap: 10,
+                          }}
+                        >
+                          {editStudentSubjectOptions.map((subject) => {
+                            const subjectId = String(getSubjectId(subject));
+                            const selected = editForm.subjectIds.includes(subjectId);
+
+                            return (
+                              <label
+                                key={subjectId}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "flex-start",
+                                  gap: 10,
+                                  padding: 12,
+                                  border: selected
+                                    ? "1px solid #2563eb"
+                                    : "1px solid #dbe7f5",
+                                  borderRadius: 13,
+                                  background: selected ? "#eff6ff" : "#ffffff",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={() => handleEditStudentSubjectToggle(subjectId)}
+                                />
+                                <span>
+                                  <strong style={{ display: "block" }}>
+                                    {subject.name || subject.subjectName}
+                                  </strong>
+                                  <small className="dashboard-muted">
+                                    {subject.subjectCode || subject.code || "No code"} · {subject.type || "Subject"}
+                                  </small>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
             {editForm.role === "teacher" && (
               <div className="admin-inner-box">
-                <h3>Teacher Assigned Classes</h3>
+                <h3>Teacher Class and Subject Appointments</h3>
+                <p className="dashboard-muted">
+                  Every class assignment must include the exact teaching
+                  subject. A teacher may teach the same subject in several
+                  classes and sections, or several subjects only when the
+                  school appoints them to each subject.
+                </p>
 
-                {editForm.assignedClasses.map((item, index) => (
-                  <div className="form-grid" key={index}>
-                    <div className="auth-form-group">
-                      <label>Class</label>
-                      <select
-                        className="auth-select"
-                        value={item.className}
-                        onChange={(e) =>
-                          handleEditAssignedClassChange(
-                            index,
-                            "className",
-                            e.target.value
-                          )
-                        }
-                        required
-                      >
-                        <option value="">Select class</option>
-                        {NEPAL_CLASSES.map((className) => (
-                          <option key={className} value={className}>
-                            Class {className}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="auth-form-group">
-                      <label>Section</label>
-                      <select
-                        className="auth-select"
-                        value={item.section}
-                        onChange={(e) =>
-                          handleEditAssignedClassChange(
-                            index,
-                            "section",
-                            e.target.value
-                          )
-                        }
-                        required
-                      >
-                        <option value="">Select section</option>
-                        {SECTION_OPTIONS.map((section) => (
-                          <option key={section} value={section}>
-                            Section {section}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="auth-form-group">
-                      <label>&nbsp;</label>
-                      <button
-                        className="small-btn remove-btn"
-                        type="button"
-                        onClick={() => removeEditTeacherClass(index)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                {editForm.assignedClasses.map((item, index) =>
+                  renderTeacherAssignmentEditor(item, index, true)
+                )}
 
                 <button
                   className="small-btn add-btn"
                   type="button"
                   onClick={addEditTeacherClass}
                 >
-                  Add Another Class
+                  Add Another Teaching Assignment
                 </button>
               </div>
             )}
@@ -2607,7 +5127,11 @@ export default function AdminDashboard() {
 
           {form.role === "student" && (
             <div className="admin-inner-box">
-              <h3>Student Class</h3>
+              <h3>Student Academic Placement</h3>
+              <p className="dashboard-muted">
+                Class 11 and 12 students must be connected to the correct stream.
+                You can also assign their exact optional subjects.
+              </p>
 
               <div className="form-grid">
                 <div className="auth-form-group">
@@ -2645,81 +5169,192 @@ export default function AdminDashboard() {
                     ))}
                   </select>
                 </div>
+
+                <div className="auth-form-group">
+                  <label>Stream / Programme</label>
+                  <select
+                    className="auth-select"
+                    name="stream"
+                    value={
+                      Number(form.className) > 0 && Number(form.className) <= 10
+                        ? "General"
+                        : form.stream
+                    }
+                    onChange={handleChange}
+                    disabled={
+                      !form.className ||
+                      (Number(form.className) > 0 && Number(form.className) <= 10)
+                    }
+                    required={Number(form.className) >= 11}
+                  >
+                    {Number(form.className) >= 11 ? (
+                      <>
+                        <option value="">Select stream</option>
+                        {STREAM_OPTIONS.map(
+                          (stream) => (
+                            <option key={stream} value={stream}>
+                              {stream}
+                            </option>
+                          )
+                        )}
+                      </>
+                    ) : (
+                      <option value="General">General</option>
+                    )}
+                  </select>
+                </div>
+
+                <div className="auth-form-group">
+                  <label>Academic Year</label>
+                  <input
+                    className="auth-input"
+                    name="academicYear"
+                    placeholder="Example: 2082/83"
+                    value={form.academicYear}
+                    onChange={handleChange}
+                  />
+                </div>
+
+                <div className="auth-form-group">
+                  <label>Subject Assignment</label>
+                  <select
+                    className="auth-select"
+                    name="subjectEnrollmentMode"
+                    value={form.subjectEnrollmentMode}
+                    onChange={handleChange}
+                  >
+                    <option value="stream">Use all subjects in the selected stream</option>
+                    <option value="individual">Choose exact subjects for this student</option>
+                  </select>
+                </div>
               </div>
+
+              {form.className && form.section && (
+                <div
+                  style={{
+                    marginTop: 16,
+                    padding: 16,
+                    border: "1px solid #dbe7f5",
+                    borderRadius: 16,
+                    background: "#f8fbff",
+                  }}
+                >
+                  {form.subjectEnrollmentMode === "stream" ? (
+                    <p className="dashboard-muted" style={{ margin: 0 }}>
+                      This student will see {createStudentSubjectOptions.length} active subject
+                      {createStudentSubjectOptions.length === 1 ? "" : "s"} for {form.stream || "General"}.
+                      Unrelated streams will not appear.
+                    </p>
+                  ) : createStudentSubjectOptions.length === 0 ? (
+                    <p className="dashboard-muted" style={{ margin: 0 }}>
+                      No matching subjects are configured yet. Add subjects for this class,
+                      section and stream from Subject Management first.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="admin-section-title-row" style={{ marginBottom: 12 }}>
+                        <div>
+                          <h4 style={{ margin: 0 }}>Choose Student Subjects</h4>
+                          <p className="dashboard-muted" style={{ margin: "5px 0 0" }}>
+                            Selected: {form.subjectIds.length} of {createStudentSubjectOptions.length}
+                          </p>
+                        </div>
+                        <div className="admin-row-actions">
+                          <button
+                            type="button"
+                            className="small-btn add-btn"
+                            onClick={() =>
+                              setForm((previous) => ({
+                                ...previous,
+                                subjectIds: createStudentSubjectOptions
+                                  .map((subject) => String(getSubjectId(subject)))
+                                  .filter(Boolean),
+                              }))
+                            }
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            className="small-btn remove-btn"
+                            onClick={() =>
+                              setForm((previous) => ({ ...previous, subjectIds: [] }))
+                            }
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                          gap: 10,
+                        }}
+                      >
+                        {createStudentSubjectOptions.map((subject) => {
+                          const subjectId = String(getSubjectId(subject));
+                          const selected = form.subjectIds.includes(subjectId);
+
+                          return (
+                            <label
+                              key={subjectId}
+                              style={{
+                                display: "flex",
+                                alignItems: "flex-start",
+                                gap: 10,
+                                padding: 12,
+                                border: selected
+                                  ? "1px solid #2563eb"
+                                  : "1px solid #dbe7f5",
+                                borderRadius: 13,
+                                background: selected ? "#eff6ff" : "#ffffff",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => handleStudentSubjectToggle(subjectId)}
+                              />
+                              <span>
+                                <strong style={{ display: "block" }}>
+                                  {subject.name || subject.subjectName}
+                                </strong>
+                                <small className="dashboard-muted">
+                                  {subject.subjectCode || subject.code || "No code"} · {subject.type || "Subject"}
+                                </small>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           {form.role === "teacher" && (
             <div className="admin-inner-box">
-              <h3>Teacher Classes</h3>
+              <h3>Teacher Class and Subject Appointments</h3>
+              <p className="dashboard-muted">
+                Every class assignment must include the exact teaching subject.
 
-              {form.assignedClasses.map((item, index) => (
-                <div className="form-grid" key={index}>
-                  <div className="auth-form-group">
-                    <label>Class</label>
-                    <select
-                      className="auth-select"
-                      value={item.className}
-                      onChange={(e) =>
-                        handleAssignedClassChange(
-                          index,
-                          "className",
-                          e.target.value
-                        )
-                      }
-                      required
-                    >
-                      <option value="">Select class</option>
-                      {NEPAL_CLASSES.map((className) => (
-                        <option key={className} value={className}>
-                          Class {className}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              </p>
 
-                  <div className="auth-form-group">
-                    <label>Section</label>
-                    <select
-                      className="auth-select"
-                      value={item.section}
-                      onChange={(e) =>
-                        handleAssignedClassChange(
-                          index,
-                          "section",
-                          e.target.value
-                        )
-                      }
-                      required
-                    >
-                      <option value="">Select section</option>
-                      {SECTION_OPTIONS.map((section) => (
-                        <option key={section} value={section}>
-                          Section {section}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="auth-form-group">
-                    <label>&nbsp;</label>
-                    <button
-                      className="small-btn remove-btn"
-                      type="button"
-                      onClick={() => removeTeacherClass(index)}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
+              {form.assignedClasses.map((item, index) =>
+                renderTeacherAssignmentEditor(item, index, false)
+              )}
 
               <button
                 className="small-btn add-btn"
                 type="button"
                 onClick={addTeacherClass}
               >
-                Add Another Class
+                Add Another Teaching Assignment
               </button>
             </div>
           )}
@@ -2807,17 +5442,49 @@ export default function AdminDashboard() {
                 <p>
                   <b>Role:</b> Teacher
                 </p>
-                <p>
-                  <b>Classes:</b>{" "}
-                  {teacher.assignedClasses?.length > 0
-                    ? teacher.assignedClasses
-                        .map(
-                          (item) =>
-                            `Class ${item.className} Section ${item.section}`
-                        )
-                        .join(", ")
-                    : "No class assigned"}
-                </p>
+                <div style={{ marginTop: 10 }}>
+                  <b>Teaching Appointments:</b>
+
+                  {teacher.assignedClasses?.length > 0 ? (
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 8,
+                        marginTop: 8,
+                      }}
+                    >
+                      {teacher.assignedClasses.map((item, index) => {
+                        const subjectNames = getAssignmentSubjectNames(item);
+
+                        return (
+                          <div
+                            key={`${getId(teacher)}-assignment-${index}`}
+                            style={{
+                              padding: 10,
+                              borderRadius: 12,
+                              background: "#f8fbff",
+                              border: "1px solid #dbe7f5",
+                            }}
+                          >
+                            <strong>
+                              Class {item.className} · Section {item.section}
+                              {Number(item.className) >= 11
+                                ? ` · ${item.stream || "Stream not assigned"}`
+                                : ""}
+                            </strong>
+                            <div className="dashboard-muted" style={{ marginTop: 4 }}>
+                              {subjectNames.length > 0
+                                ? subjectNames.join(", ")
+                                : "No teaching subject assigned"}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="dashboard-muted">No class assigned</p>
+                  )}
+                </div>
 
                 {renderUserActions(teacher)}
               </article>
@@ -2860,6 +5527,22 @@ export default function AdminDashboard() {
                 <p>
                   <b>Class:</b> Class {student.className || "N/A"} Section{" "}
                   {student.section || "N/A"}
+                </p>
+                <p>
+                  <b>Stream:</b>{" "}
+                  {Number(student.className) >= 11
+                    ? student.stream || "Not assigned"
+                    : "General"}
+                </p>
+                <p>
+                  <b>Academic Year:</b> {student.academicYear || "N/A"}
+                </p>
+                <p>
+                  <b>Subjects:</b>{" "}
+                  {student.subjectEnrollmentMode === "individual" ||
+                  (Array.isArray(student.subjectIds) && student.subjectIds.length > 0)
+                    ? `${student.subjectIds?.length || 0} individually assigned`
+                    : `All ${student.stream || "General"} subjects`}
                 </p>
 
                 {renderUserActions(student)}
