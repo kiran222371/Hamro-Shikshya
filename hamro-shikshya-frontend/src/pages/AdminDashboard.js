@@ -502,6 +502,146 @@ const getSubjectIdentityKey = (subject = {}) => {
   ].join("|");
 };
 
+const getComparableSubjectSections = (subject = {}) => {
+  const values =
+    Array.isArray(subject.sections) &&
+    subject.sections.length > 0
+      ? subject.sections
+      : [subject.section || "All"];
+
+  const cleaned = values
+    .map((value) =>
+      String(value || "All")
+        .trim()
+        .toLowerCase()
+    )
+    .filter(Boolean);
+
+  return cleaned.length > 0
+    ? [...new Set(cleaned)]
+    : ["all"];
+};
+
+const subjectRecordsMatch = (
+  first = {},
+  second = {}
+) => {
+  const firstName = String(
+    first.name ||
+      first.subjectName ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const secondName = String(
+    second.name ||
+      second.subjectName ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const firstCode = String(
+    first.subjectCode ||
+      first.code ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const secondCode = String(
+    second.subjectCode ||
+      second.code ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const sameNameOrCode =
+    Boolean(
+      firstName &&
+        secondName &&
+        firstName === secondName
+    ) ||
+    Boolean(
+      firstCode &&
+        secondCode &&
+        firstCode === secondCode
+    );
+
+  if (!sameNameOrCode) {
+    return false;
+  }
+
+  const sameClass =
+    String(
+      first.className ||
+        first.class ||
+        ""
+    )
+      .trim()
+      .toLowerCase() ===
+    String(
+      second.className ||
+        second.class ||
+        ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (!sameClass) {
+    return false;
+  }
+
+  const sameStream =
+    String(first.stream || "General")
+      .trim()
+      .toLowerCase() ===
+    String(second.stream || "General")
+      .trim()
+      .toLowerCase();
+
+  if (!sameStream) {
+    return false;
+  }
+
+  const firstAcademicYear = String(
+    first.academicYear || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const secondAcademicYear = String(
+    second.academicYear || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    firstAcademicYear &&
+    secondAcademicYear &&
+    firstAcademicYear !==
+      secondAcademicYear
+  ) {
+    return false;
+  }
+
+  const firstSections =
+    getComparableSubjectSections(first);
+
+  const secondSections =
+    getComparableSubjectSections(second);
+
+  return (
+    firstSections.includes("all") ||
+    secondSections.includes("all") ||
+    firstSections.some((section) =>
+      secondSections.includes(section)
+    )
+  );
+};
+
 const buildPersistableSubjectPayload = (subject = {}, schoolId = "") => {
   const name = String(subject.name || subject.subjectName || "").trim();
   const className = String(subject.className || subject.class || "").trim();
@@ -549,30 +689,53 @@ const buildPersistableSubjectPayload = (subject = {}, schoolId = "") => {
 };
 
 const mergeSubjectRecords = (...subjectGroups) => {
-  const merged = new Map();
+  const merged = [];
 
   subjectGroups
     .flat()
     .filter(Boolean)
     .map(normaliseSubject)
     .forEach((subject) => {
-      const key = getSubjectIdentityKey(subject);
-      const existing = merged.get(key);
+      const existingIndex =
+        merged.findIndex((existing) =>
+          subjectRecordsMatch(
+            existing,
+            subject
+          )
+        );
 
-      if (!existing) {
-        merged.set(key, subject);
+      if (existingIndex === -1) {
+        merged.push(subject);
         return;
       }
+
+      const existing =
+        merged[existingIndex];
 
       if (
         !hasPersistentSubjectId(existing) &&
         hasPersistentSubjectId(subject)
       ) {
-        merged.set(key, subject);
+        merged[existingIndex] = subject;
+        return;
+      }
+
+      if (
+        hasPersistentSubjectId(existing) &&
+        !hasPersistentSubjectId(subject)
+      ) {
+        return;
+      }
+
+      if (
+        existing.isActive === false &&
+        subject.isActive !== false
+      ) {
+        merged[existingIndex] = subject;
       }
     });
 
-  return Array.from(merged.values());
+  return merged;
 };
 
 const getTeacherSubjectOptions = (allSubjects, assignment) => {
@@ -1007,17 +1170,20 @@ export default function AdminDashboard() {
       const res = await getSubjects(schoolId);
       let apiSubjects = toArray(res).map(normaliseSubject);
 
-      const apiIdentityKeys = new Set(
-        apiSubjects.map(getSubjectIdentityKey)
-      );
-
-      const localOnlySubjects = savedSubjects.filter(
-        (subject) =>
-          !hasPersistentSubjectId(subject) &&
-          !apiIdentityKeys.has(
-            getSubjectIdentityKey(subject)
-          )
-      );
+      const localOnlySubjects =
+        savedSubjects.filter(
+          (subject) =>
+            !hasPersistentSubjectId(
+              subject
+            ) &&
+            !apiSubjects.some(
+              (apiSubject) =>
+                subjectRecordsMatch(
+                  apiSubject,
+                  subject
+                )
+            )
+        );
 
       const syncedSubjects = [];
       const failedLocalSubjects = [];
@@ -1047,10 +1213,55 @@ export default function AdminDashboard() {
           }
 
           syncedSubjects.push(savedSubject);
-          apiIdentityKeys.add(
-            getSubjectIdentityKey(savedSubject)
-          );
         } catch (syncError) {
+          if (
+            syncError?.response?.status ===
+            409
+          ) {
+            try {
+              const duplicateResponse =
+                await getSubjects(schoolId);
+
+              const duplicateSubjects =
+                toArray(
+                  duplicateResponse
+                ).map(normaliseSubject);
+
+              const existingSubject =
+                duplicateSubjects.find(
+                  (apiSubject) =>
+                    subjectRecordsMatch(
+                      apiSubject,
+                      localSubject
+                    )
+                );
+
+              if (
+                existingSubject &&
+                hasPersistentSubjectId(
+                  existingSubject
+                )
+              ) {
+                syncedSubjects.push(
+                  existingSubject
+                );
+                apiSubjects =
+                  mergeSubjectRecords(
+                    apiSubjects,
+                    duplicateSubjects
+                  );
+                continue;
+              }
+            } catch (
+              duplicateLookupError
+            ) {
+              console.warn(
+                "FAILED TO LOAD EXISTING DUPLICATE SUBJECT:",
+                duplicateLookupError
+              );
+            }
+          }
+
           console.warn(
             "LOCAL SUBJECT SYNC FAILED:",
             localSubject,
@@ -1089,7 +1300,7 @@ export default function AdminDashboard() {
             failedLocalSubjects.length === 1
               ? " is"
               : "s are"
-          } still stored only in this browser and cannot be assigned to a teacher. Check that the backend is running, then refresh this page.`
+          } still stored only in this browser and cannot be assigned to a teacher. The app could not match them with a database record. Refresh once more, or delete and recreate only the subjects that remain marked Local only.`
         );
       }
     } catch (err) {
