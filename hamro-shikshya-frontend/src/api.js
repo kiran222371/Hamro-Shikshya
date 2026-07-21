@@ -896,6 +896,38 @@ const safeGetFirstNonEmpty = async (
 };
 
 
+const getSubjectEducationLevel = (value, className) => {
+  const normalized = cleanText(value)
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const levelMap = {
+    basic: "Basic",
+    "basic education": "Basic",
+    primary: "Basic",
+    secondary: "Secondary",
+    "secondary education": "Secondary",
+    "higher secondary": "Higher Secondary",
+    "higher secondary education": "Higher Secondary",
+    "senior secondary": "Higher Secondary",
+    general: "General",
+  };
+
+  if (levelMap[normalized]) {
+    return levelMap[normalized];
+  }
+
+  const classNumber = Number(cleanText(className));
+
+  if (classNumber >= 1 && classNumber <= 8) return "Basic";
+  if (classNumber >= 9 && classNumber <= 10) return "Secondary";
+  if (classNumber >= 11 && classNumber <= 12) return "Higher Secondary";
+
+  return "General";
+};
+
 const prepareSubjectPayload = (
   data = {}
 ) => {
@@ -924,6 +956,11 @@ const prepareSubjectPayload = (
       subjectObject.subjectCode ||
       subjectObject.code
   ).toUpperCase();
+
+  const className = cleanText(
+    data.className ||
+      data.class
+  );
 
   let sections = cleanStringArray(
     data.sections
@@ -963,9 +1000,7 @@ const prepareSubjectPayload = (
     code: subjectCode,
     subjectCode,
 
-    className: cleanText(
-      data.className || data.class
-    ),
+    className,
 
     section:
       sections[0] || "All",
@@ -979,8 +1014,11 @@ const prepareSubjectPayload = (
       data.type || "Compulsory",
 
     educationLevel:
-      cleanText(data.educationLevel) ||
-      "General",
+      getSubjectEducationLevel(
+        data.educationLevel ||
+          data.level,
+        className
+      ),
 
     curriculumBoard:
       cleanText(data.curriculumBoard) ||

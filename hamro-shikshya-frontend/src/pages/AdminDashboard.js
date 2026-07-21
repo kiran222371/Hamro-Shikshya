@@ -493,6 +493,88 @@ const hasPersistentSubjectId = (subject) => {
   return Boolean(subjectId) && !subjectId.startsWith("local-");
 };
 
+const getSubjectIdentityKey = (subject = {}) => {
+  return [
+    String(subject.name || subject.subjectName || "").trim().toLowerCase(),
+    String(subject.className || subject.class || "").trim().toLowerCase(),
+    String(subject.section || "All").trim().toLowerCase(),
+    String(subject.stream || "General").trim().toLowerCase(),
+  ].join("|");
+};
+
+const buildPersistableSubjectPayload = (subject = {}, schoolId = "") => {
+  const name = String(subject.name || subject.subjectName || "").trim();
+  const className = String(subject.className || subject.class || "").trim();
+  const subjectCode =
+    String(subject.subjectCode || subject.code || "").trim() ||
+    makeSubjectCode(name, className);
+
+  return {
+    name,
+    subjectName: name,
+    code: subjectCode,
+    subjectCode,
+    className,
+    section: String(subject.section || "All").trim() || "All",
+    sections:
+      Array.isArray(subject.sections) && subject.sections.length > 0
+        ? subject.sections
+        : [String(subject.section || "All").trim() || "All"],
+    stream: String(subject.stream || "General").trim() || "General",
+    type: subject.type || "Compulsory",
+    level: subject.level || getNepalLevel(className),
+    educationLevel:
+      subject.educationLevel || subject.level || getNepalLevel(className),
+    academicYear: String(subject.academicYear || "").trim(),
+    curriculumBoard:
+      subject.curriculumBoard || "Nepal Curriculum / NEB",
+    curriculumVersion: String(subject.curriculumVersion || "").trim(),
+    fullMarks:
+      subject.fullMarks === undefined || subject.fullMarks === null
+        ? null
+        : subject.fullMarks,
+    passMarks:
+      subject.passMarks === undefined || subject.passMarks === null
+        ? null
+        : subject.passMarks,
+    creditHours:
+      subject.creditHours === undefined || subject.creditHours === null
+        ? null
+        : subject.creditHours,
+    description: String(subject.description || "").trim(),
+    sortOrder: Number(subject.sortOrder || 0),
+    isActive: subject.isActive !== false,
+    schoolId: schoolId || subject.schoolId || "",
+  };
+};
+
+const mergeSubjectRecords = (...subjectGroups) => {
+  const merged = new Map();
+
+  subjectGroups
+    .flat()
+    .filter(Boolean)
+    .map(normaliseSubject)
+    .forEach((subject) => {
+      const key = getSubjectIdentityKey(subject);
+      const existing = merged.get(key);
+
+      if (!existing) {
+        merged.set(key, subject);
+        return;
+      }
+
+      if (
+        !hasPersistentSubjectId(existing) &&
+        hasPersistentSubjectId(subject)
+      ) {
+        merged.set(key, subject);
+      }
+    });
+
+  return Array.from(merged.values());
+};
+
 const getTeacherSubjectOptions = (allSubjects, assignment) => {
   return allSubjects
     .filter(hasPersistentSubjectId)
@@ -913,19 +995,121 @@ export default function AdminDashboard() {
   };
 
   const fetchSubjects = async () => {
-    try {
-      const savedSubjects = safeReadStorage(SUBJECTS_STORAGE_KEY, []);
-      const res = await getSubjects(loggedUser.schoolId || "");
-      const apiSubjects = toArray(res).map(normaliseSubject);
+    const schoolId =
+      loggedUser.schoolId || schoolProfile.schoolId || "";
 
-      const finalSubjects = apiSubjects.length > 0 ? apiSubjects : savedSubjects;
+    const savedSubjects = safeReadStorage(
+      SUBJECTS_STORAGE_KEY,
+      []
+    ).map(normaliseSubject);
+
+    try {
+      const res = await getSubjects(schoolId);
+      let apiSubjects = toArray(res).map(normaliseSubject);
+
+      const apiIdentityKeys = new Set(
+        apiSubjects.map(getSubjectIdentityKey)
+      );
+
+      const localOnlySubjects = savedSubjects.filter(
+        (subject) =>
+          !hasPersistentSubjectId(subject) &&
+          !apiIdentityKeys.has(
+            getSubjectIdentityKey(subject)
+          )
+      );
+
+      const syncedSubjects = [];
+      const failedLocalSubjects = [];
+
+      for (const localSubject of localOnlySubjects) {
+        try {
+          const payload =
+            buildPersistableSubjectPayload(
+              localSubject,
+              schoolId
+            );
+
+          const createResponse =
+            await createSubject(payload);
+
+          const savedSubject =
+            normaliseSubject(
+              createResponse?.data?.subject ||
+                createResponse?.data?.data ||
+                createResponse?.data
+            );
+
+          if (!hasPersistentSubjectId(savedSubject)) {
+            throw new Error(
+              "The backend did not return a persistent subject ID."
+            );
+          }
+
+          syncedSubjects.push(savedSubject);
+          apiIdentityKeys.add(
+            getSubjectIdentityKey(savedSubject)
+          );
+        } catch (syncError) {
+          console.warn(
+            "LOCAL SUBJECT SYNC FAILED:",
+            localSubject,
+            syncError
+          );
+
+          failedLocalSubjects.push(localSubject);
+        }
+      }
+
+      if (syncedSubjects.length > 0) {
+        const refreshedResponse =
+          await getSubjects(schoolId);
+
+        apiSubjects = toArray(
+          refreshedResponse
+        ).map(normaliseSubject);
+      }
+
+      const finalSubjects =
+        mergeSubjectRecords(
+          apiSubjects,
+          syncedSubjects,
+          failedLocalSubjects
+        );
 
       setSubjects(finalSubjects);
-      safeWriteStorage(SUBJECTS_STORAGE_KEY, finalSubjects);
+      safeWriteStorage(
+        SUBJECTS_STORAGE_KEY,
+        finalSubjects
+      );
+
+      if (failedLocalSubjects.length > 0) {
+        showError(
+          `${failedLocalSubjects.length} subject${
+            failedLocalSubjects.length === 1
+              ? " is"
+              : "s are"
+          } still stored only in this browser and cannot be assigned to a teacher. Check that the backend is running, then refresh this page.`
+        );
+      }
     } catch (err) {
-      console.warn("SUBJECTS BACKEND NOT AVAILABLE:", err);
-      const savedSubjects = safeReadStorage(SUBJECTS_STORAGE_KEY, []);
+      console.warn(
+        "SUBJECTS BACKEND NOT AVAILABLE:",
+        err
+      );
+
       setSubjects(savedSubjects);
+
+      if (
+        savedSubjects.some(
+          (subject) =>
+            !hasPersistentSubjectId(subject)
+        )
+      ) {
+        showError(
+          "The subjects shown on this page are stored only in this browser because the backend could not be reached. Start the backend and refresh before assigning subjects to teachers."
+        );
+      }
     }
   };
 
@@ -2404,8 +2588,13 @@ export default function AdminDashboard() {
   const handleSubjectSubmit = async (e) => {
     e.preventDefault();
 
-    if (!subjectForm.name.trim() || !subjectForm.className.trim()) {
-      showError("Please add subject name and class.");
+    if (
+      !subjectForm.name.trim() ||
+      !subjectForm.className.trim()
+    ) {
+      showError(
+        "Please add subject name and class."
+      );
       return;
     }
 
@@ -2417,57 +2606,113 @@ export default function AdminDashboard() {
       const payload = buildSubjectPayload();
 
       if (editingSubject) {
-        const subjectId = getSubjectId(editingSubject);
+        const subjectId =
+          getSubjectId(editingSubject);
 
-        let updatedSubject = normaliseSubject({
-          ...editingSubject,
-          ...payload,
-          id: subjectId,
-        });
+        let response;
 
-        try {
-          const res = await updateSubject(subjectId, payload);
-
-          updatedSubject = normaliseSubject(
-            res?.data?.subject || res?.data?.data || res?.data || updatedSubject
-          );
-        } catch (backendErr) {
-          console.warn("SUBJECT UPDATED LOCALLY:", backendErr);
+        if (
+          !subjectId ||
+          String(subjectId).startsWith("local-")
+        ) {
+          response =
+            await createSubject(payload);
+        } else {
+          response =
+            await updateSubject(
+              subjectId,
+              payload
+            );
         }
 
-        const nextSubjects = subjects.map((subject) =>
-          String(getSubjectId(subject)) === String(subjectId)
-            ? updatedSubject
-            : subject
+        const updatedSubject =
+          normaliseSubject(
+            response?.data?.subject ||
+              response?.data?.data ||
+              response?.data
+          );
+
+        if (
+          !hasPersistentSubjectId(
+            updatedSubject
+          )
+        ) {
+          throw new Error(
+            "The subject was not saved to the database."
+          );
+        }
+
+        const nextSubjects =
+          mergeSubjectRecords(
+            subjects.filter(
+              (subject) =>
+                String(
+                  getSubjectId(subject)
+                ) !== String(subjectId)
+            ),
+            [updatedSubject]
+          );
+
+        setSubjects(nextSubjects);
+        safeWriteStorage(
+          SUBJECTS_STORAGE_KEY,
+          nextSubjects
         );
 
-        setSubjects(nextSubjects);
-        safeWriteStorage(SUBJECTS_STORAGE_KEY, nextSubjects);
-        showSuccess("Subject updated successfully.");
+        showSuccess(
+          "Subject updated successfully."
+        );
       } else {
-        let newSubject = normaliseSubject(payload);
+        const response =
+          await createSubject(payload);
 
-        try {
-          const res = await createSubject(payload);
-
-          newSubject = normaliseSubject(
-            res?.data?.subject || res?.data?.data || res?.data || newSubject
+        const newSubject =
+          normaliseSubject(
+            response?.data?.subject ||
+              response?.data?.data ||
+              response?.data
           );
-        } catch (backendErr) {
-          console.warn("SUBJECT SAVED LOCALLY:", backendErr);
+
+        if (
+          !hasPersistentSubjectId(
+            newSubject
+          )
+        ) {
+          throw new Error(
+            "The subject was not saved to the database."
+          );
         }
 
-        const nextSubjects = [...subjects, newSubject];
+        const nextSubjects =
+          mergeSubjectRecords(
+            subjects,
+            [newSubject]
+          );
 
         setSubjects(nextSubjects);
-        safeWriteStorage(SUBJECTS_STORAGE_KEY, nextSubjects);
-        showSuccess("Subject added successfully.");
+        safeWriteStorage(
+          SUBJECTS_STORAGE_KEY,
+          nextSubjects
+        );
+
+        showSuccess(
+          "Subject added successfully."
+        );
       }
 
       resetSubjectForm();
+      await fetchSubjects();
     } catch (err) {
-      console.error("SUBJECT SAVE ERROR:", err);
-      showError("Failed to save subject.");
+      console.error(
+        "SUBJECT SAVE ERROR:",
+        err
+      );
+
+      showError(
+        err.response?.data?.message ||
+          err.message ||
+          "Failed to save subject to the database."
+      );
     } finally {
       setSubjectSaving(false);
     }
@@ -2475,7 +2720,9 @@ export default function AdminDashboard() {
 
   const handleAutoAddNepalSubjects = async () => {
     if (!subjectForm.className) {
-      showError("Select class first before auto-adding subjects.");
+      showError(
+        "Select class first before auto-adding subjects."
+      );
       return;
     }
 
@@ -2484,69 +2731,186 @@ export default function AdminDashboard() {
       setError("");
       setSuccess("");
 
-      const templateSubjects = getNepalSubjectTemplates(
-        subjectForm.className,
-        subjectForm.stream || "General"
-      );
+      const templateSubjects =
+        getNepalSubjectTemplates(
+          subjectForm.className,
+          subjectForm.stream ||
+            "General"
+        );
 
-      const section = subjectForm.section.trim() || "All";
+      const section =
+        subjectForm.section.trim() ||
+        "All";
 
-      const newSubjects = templateSubjects
-        .map((item) =>
-          normaliseSubject({
-            ...item,
-            className: subjectForm.className,
-            section,
-            subjectCode: makeSubjectCode(item.name, subjectForm.className),
-            code: makeSubjectCode(item.name, subjectForm.className),
-            level: getNepalLevel(subjectForm.className),
-            schoolId: loggedUser.schoolId || schoolProfile.schoolId || "",
-          })
-        )
-        .filter((newSubject) => {
-          return !subjects.some((existing) => {
-            return (
-              String(existing.name).toLowerCase() ===
-                String(newSubject.name).toLowerCase() &&
-              String(existing.className) === String(newSubject.className) &&
-              String(existing.section || "All") ===
-                String(newSubject.section || "All") &&
-              String(existing.stream || "General") ===
-                String(newSubject.stream || "General")
+      const schoolId =
+        loggedUser.schoolId ||
+        schoolProfile.schoolId ||
+        "";
+
+      const subjectsToCreate =
+        templateSubjects
+          .map((item) =>
+            buildPersistableSubjectPayload(
+              {
+                ...item,
+                className:
+                  subjectForm.className,
+                section,
+                sections: [section],
+                subjectCode:
+                  makeSubjectCode(
+                    item.name,
+                    subjectForm.className
+                  ),
+                code:
+                  makeSubjectCode(
+                    item.name,
+                    subjectForm.className
+                  ),
+                level:
+                  getNepalLevel(
+                    subjectForm.className
+                  ),
+              },
+              schoolId
+            )
+          )
+          .filter((newSubject) => {
+            const newKey =
+              getSubjectIdentityKey(
+                newSubject
+              );
+
+            return !subjects.some(
+              (existing) =>
+                getSubjectIdentityKey(
+                  existing
+                ) === newKey &&
+                hasPersistentSubjectId(
+                  existing
+                )
             );
           });
-        });
 
-      if (newSubjects.length === 0) {
-        showError("These subjects already exist for the selected class/stream.");
+      if (
+        subjectsToCreate.length === 0
+      ) {
+        showError(
+          "These subjects already exist in the database for the selected class and stream."
+        );
         return;
       }
 
-      try {
-        await bulkCreateSubjects({
-          subjects: newSubjects,
-          schoolId: loggedUser.schoolId || schoolProfile.schoolId || "",
-        });
-      } catch (bulkErr) {
-        console.warn("BULK SUBJECT BACKEND NOT AVAILABLE:", bulkErr);
+      const savedSubjects = [];
+      const failedSubjects = [];
 
-        for (const subject of newSubjects) {
-          try {
-            await createSubject(subject);
-          } catch (singleErr) {
-            console.warn("SUBJECT SAVED LOCALLY:", singleErr);
+      for (
+        const subjectPayload of
+        subjectsToCreate
+      ) {
+        try {
+          const response =
+            await createSubject(
+              subjectPayload
+            );
+
+          const savedSubject =
+            normaliseSubject(
+              response?.data?.subject ||
+                response?.data?.data ||
+                response?.data
+            );
+
+          if (
+            !hasPersistentSubjectId(
+              savedSubject
+            )
+          ) {
+            throw new Error(
+              "The backend did not return a persistent subject ID."
+            );
           }
+
+          savedSubjects.push(
+            savedSubject
+          );
+        } catch (subjectError) {
+          console.error(
+            "AUTO ADD SUBJECT ERROR:",
+            subjectPayload,
+            subjectError
+          );
+
+          failedSubjects.push({
+            name:
+              subjectPayload.name,
+            error:
+              subjectError.response?.data
+                ?.message ||
+              subjectError.message ||
+              "Unknown error",
+          });
         }
       }
 
-      const nextSubjects = [...subjects, ...newSubjects];
+      if (
+        savedSubjects.length === 0
+      ) {
+        throw new Error(
+          failedSubjects[0]?.error ||
+            "No subjects could be saved to the database."
+        );
+      }
+
+      const nextSubjects =
+        mergeSubjectRecords(
+          subjects,
+          savedSubjects
+        );
 
       setSubjects(nextSubjects);
-      safeWriteStorage(SUBJECTS_STORAGE_KEY, nextSubjects);
-      showSuccess(`${newSubjects.length} Nepal curriculum subjects added.`);
+      safeWriteStorage(
+        SUBJECTS_STORAGE_KEY,
+        nextSubjects
+      );
+
+      await fetchSubjects();
+
+      if (
+        failedSubjects.length > 0
+      ) {
+        showError(
+          `${savedSubjects.length} subject${
+            savedSubjects.length === 1
+              ? ""
+              : "s"
+          } saved, but ${failedSubjects.length} failed. ${failedSubjects
+            .map(
+              (item) =>
+                `${item.name}: ${item.error}`
+            )
+            .join(" | ")}`
+        );
+      } else {
+        showSuccess(
+          `${savedSubjects.length} Nepal curriculum subject${
+            savedSubjects.length === 1
+              ? ""
+              : "s"
+          } added to the database.`
+        );
+      }
     } catch (err) {
-      console.error("AUTO ADD SUBJECTS ERROR:", err);
-      showError("Failed to auto-add subjects.");
+      console.error(
+        "AUTO ADD SUBJECTS ERROR:",
+        err
+      );
+
+      showError(
+        err.response?.data?.message ||
+          err.message ||
+          "Failed to auto-add subjects to the database."
+      );
     } finally {
       setSubjectSaving(false);
     }
@@ -3077,7 +3441,34 @@ export default function AdminDashboard() {
     };
 
     const classNumber = Number(assignment.className);
-    const availableSubjects = getTeacherSubjectOptions(subjects, assignment);
+    const matchingSubjectsIncludingLocal = subjects.filter(
+      (subject) =>
+        isSubjectAvailableForStudent(
+          subject,
+          assignment
+        )
+    );
+    const localMatchingSubjects =
+      matchingSubjectsIncludingLocal.filter(
+        (subject) =>
+          !hasPersistentSubjectId(subject)
+      );
+    const availableSubjects =
+      matchingSubjectsIncludingLocal
+        .filter(hasPersistentSubjectId)
+        .sort((a, b) =>
+          String(
+            a.name ||
+              a.subjectName ||
+              ""
+          ).localeCompare(
+            String(
+              b.name ||
+                b.subjectName ||
+                ""
+            )
+          )
+        );
     const selectedIds = assignment.subjectIds;
 
     const handleFieldChange = isEdit
@@ -3112,8 +3503,8 @@ export default function AdminDashboard() {
               Teaching Assignment {index + 1}
             </h4>
             <p className="dashboard-muted" style={{ margin: "5px 0 0" }}>
-              
-              
+              Choose the class, section and only the subject or subjects this
+              teacher is officially appointed to teach.
             </p>
           </div>
 
@@ -3236,14 +3627,25 @@ export default function AdminDashboard() {
               border: "1px solid #fed7aa",
             }}
           >
-            <strong>No matching subjects configured</strong>
+            <strong>
+              {localMatchingSubjects.length > 0
+                ? "Matching subjects are not saved to the database"
+                : "No matching subjects configured"}
+            </strong>
             <p className="dashboard-muted" style={{ margin: "6px 0 0" }}>
-              Add active subjects for Class {assignment.className}, Section{" "}
-              {assignment.section}
-              {classNumber >= 11
-                ? `, ${assignment.stream} stream`
-                : ""}{" "}
-              from Subject Management first.
+              {localMatchingSubjects.length > 0
+                ? `${localMatchingSubjects.length} matching subject${
+                    localMatchingSubjects.length === 1 ? " is" : "s are"
+                  } visible in Subject Management, but ${
+                    localMatchingSubjects.length === 1 ? "it has" : "they have"
+                  } only been saved in this browser. Make sure the backend is running, then refresh the page so the subject records can be synchronised to MongoDB.`
+                : `Add active subjects for Class ${assignment.className}, Section ${
+                    assignment.section
+                  }${
+                    classNumber >= 11
+                      ? `, ${assignment.stream} stream`
+                      : ""
+                  } from Subject Management first.`}
             </p>
           </div>
         ) : (
@@ -3638,8 +4040,7 @@ export default function AdminDashboard() {
           <div>
             <h2 className="card-title">Subject Management</h2>
             <p className="dashboard-muted">
-              Add, edit and manage subjects for classes 1 to 12 based on Nepal
-              education structure.
+              Add school subjects according to Nepal classes, streams and sections.
             </p>
           </div>
         </div>
@@ -3832,6 +4233,16 @@ export default function AdminDashboard() {
                   {subject.type || "Compulsory"}
                 </span>
 
+                {hasPersistentSubjectId(subject) ? (
+                  <span className="badge badge-success">
+                    Saved to database
+                  </span>
+                ) : (
+                  <span className="badge badge-danger">
+                    Local only — cannot assign
+                  </span>
+                )}
+
                 <div className="admin-row-actions">
                   <button
                     className="small-btn add-btn"
@@ -3863,8 +4274,9 @@ export default function AdminDashboard() {
           <div>
             <h2 className="card-title">Weekly Timetable Management</h2>
             <p className="dashboard-muted">
-              Add, edit and manage weekly teaching periods for classes and sections.
-
+              Build the weekly class schedule. Students and teachers will
+              automatically receive the periods connected to their class,
+              section, stream and subject appointments.
             </p>
           </div>
 
@@ -3888,8 +4300,9 @@ export default function AdminDashboard() {
                     : "Add Timetable Period"}
                 </h3>
                 <p className="dashboard-muted" style={{ margin: "6px 0 0" }}>
-                  
-
+                  Teaching periods use the existing Subject and Teacher
+                  appointments, preventing an unassigned teacher from being
+                  scheduled for the wrong subject.
                 </p>
               </div>
             </div>
@@ -4236,8 +4649,7 @@ export default function AdminDashboard() {
           <div>
             <h3 style={{ margin: 0 }}>Weekly Timetable</h3>
             <p className="dashboard-muted" style={{ margin: "6px 0 0" }}>
-              
-
+              Click any timetable block to open its full details.
             </p>
           </div>
 
@@ -5341,8 +5753,9 @@ export default function AdminDashboard() {
             <div className="admin-inner-box">
               <h3>Teacher Class and Subject Appointments</h3>
               <p className="dashboard-muted">
-                Every class assignment must include the exact teaching subject.
-
+                Assign the teacher to specific subjects for every class and
+                section. The Teacher Portal will only show the selected
+                subjects when creating homework, exams and marks.
               </p>
 
               {form.assignedClasses.map((item, index) =>
